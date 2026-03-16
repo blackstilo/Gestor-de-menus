@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestor de Menús Saludables</title>
+
+  <!-- Tipografía moderna -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS vía CDN -->
+  <script>
+    // Configuración ligera de Tailwind para la paleta
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primario: {
+              50: '#ecfdf3',
+              100: '#d1fadf',
+              500: '#16a34a',
+              600: '#15803d'
+            },
+            acento: {
+              50: '#fff7ed',
+              100: '#ffedd5',
+              400: '#fb923c',
+              500: '#f97316'
+            }
+          },
+          boxShadow: {
+            suave: '0 18px 45px rgba(15, 23, 42, 0.08)'
+          },
+          borderRadius: {
+            'xl2': '1.25rem'
+          }
+        }
+      }
+    };
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body class="min-h-screen bg-gradient-to-b from-emerald-50 via-slate-50 to-orange-50 text-slate-900 antialiased">
+  <div id="app" class="min-h-screen flex flex-col">
+    <!-- NAVBAR persistente -->
+    <header class="border-b border-slate-200 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/70 sticky top-0 z-40">
+      <div class="relative overflow-hidden">
+        <div class="pointer-events-none absolute inset-y-0 right-0 w-64 opacity-70">
+          <div class="absolute -right-10 -top-16 h-32 w-32 rounded-full bg-primario-100 blur-2xl"></div>
+          <div class="absolute right-4 top-6 h-24 w-24 rounded-full bg-acento-100 blur-2xl"></div>
+        </div>
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
+          <button id="navLogo" class="flex items-center gap-3 text-left">
+            <div
+              class="h-9 w-9 rounded-2xl bg-gradient-to-br from-primario-500 to-acento-400 flex items-center justify-center shadow-md shadow-primario-500/30">
+              <span class="text-white font-semibold text-lg">M</span>
+            </div>
+            <div class="hidden sm:block">
+              <p class="font-semibold text-base tracking-tight leading-5">Gestor de Menús</p>
+              <p class="text-xs text-slate-500">Saludable y local</p>
+            </div>
+          </button>
+
+          <nav class="flex items-center gap-1.5 sm:gap-2">
+            <a class="nav-link" href="#/inicio" data-route="inicio">Inicio</a>
+            <a class="nav-link" href="#/planificador" data-route="planificador">Planificador</a>
+            <a class="nav-link" href="#/platos" data-route="platos">Mis Platos</a>
+            <a class="nav-link" href="#/lista" data-route="lista">Lista</a>
+          </nav>
+
+          <div class="hidden md:flex items-center gap-2">
+            <button id="btnLimpiarTodo"
+              class="inline-flex items-center gap-1 rounded-full border border-red-100 bg-white px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition">
+              Limpiar todo
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- CONTENIDO SPA -->
+    <main class="flex-1">
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <!-- INICIO -->
+        <section id="vistaInicio" data-vista="inicio" class="vista">
+          <div class="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] gap-6 items-start">
+            <div class="relative overflow-hidden rounded-xl2 border border-slate-100 bg-white/85 backdrop-blur shadow-suave p-5 sm:p-7">
+              <div class="pointer-events-none absolute -left-10 -top-10 h-44 w-44 rounded-full bg-primario-100/70 blur-3xl"></div>
+              <div class="pointer-events-none absolute -right-16 -bottom-16 h-56 w-56 rounded-full bg-acento-100/80 blur-3xl"></div>
+
+              <p class="text-xs uppercase tracking-wider text-slate-500 font-medium">Bienvenido</p>
+              <h1 class="mt-2 text-2xl sm:text-3xl font-semibold tracking-tight">
+                Planifica menús saludables con una experiencia premium, 100% local.
+              </h1>
+              <p class="mt-3 text-sm sm:text-base text-slate-600 max-w-2xl">
+                Crea tu biblioteca de platos con fotos optimizadas, organiza tu semana o quincena de un vistazo y genera
+                una lista de la compra inteligente en segundos.
+              </p>
+
+              <div class="mt-6 grid sm:grid-cols-2 gap-3">
+                <button class="tarjeta-accion" data-ir="#/planificador">
+                  <span class="tarjeta-icono bg-primario-50 text-primario-600 border border-primario-100">📅</span>
+                  <span class="flex-1">
+                    <span class="block font-semibold">Planificador</span>
+                    <span class="block text-xs text-slate-500">Asigna platos con selector inteligente</span>
+                  </span>
+                  <span class="text-slate-400">›</span>
+                </button>
+
+                <button class="tarjeta-accion" data-ir="#/platos">
+                  <span class="tarjeta-icono bg-acento-50 text-acento-500 border border-acento-100">🍽️</span>
+                  <span class="flex-1">
+                    <span class="block font-semibold">Mis Platos</span>
+                    <span class="block text-xs text-slate-500">Crea y edita tu biblioteca</span>
+                  </span>
+                  <span class="text-slate-400">›</span>
+                </button>
+
+                <button class="tarjeta-accion" data-ir="#/lista">
+                  <span class="tarjeta-icono bg-emerald-50 text-emerald-600 border border-emerald-100">🧾</span>
+                  <span class="flex-1">
+                    <span class="block font-semibold">Lista de la Compra</span>
+                    <span class="block text-xs text-slate-500">Consolida ingredientes y compártela</span>
+                  </span>
+                  <span class="text-slate-400">›</span>
+                </button>
+
+                <div class="rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3 flex items-center gap-3">
+                  <div class="h-10 w-10 rounded-2xl bg-white border border-slate-200 flex items-center justify-center">🔒</div>
+                  <div>
+                    <p class="text-sm font-medium">Privacidad</p>
+                    <p class="text-xs text-slate-500">Todo se guarda en tu navegador (LocalStorage).</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-6 flex flex-wrap gap-2">
+                <button id="btnEmpezar" class="btn-primario">Empezar ahora</button>
+                <button id="btnIrPlatos" class="btn-secundario">Crear mis primeros platos</button>
+              </div>
+            </div>
+
+            <div class="grid gap-3">
+              <div class="relative overflow-hidden rounded-xl2 border border-slate-100 bg-white/90 backdrop-blur shadow-suave">
+                <img
+                  src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=1200&q=70"
+                  alt="Comida saludable"
+                  class="h-44 w-full object-cover" />
+                <div class="p-4">
+                  <p class="text-sm font-semibold">Inspiración saludable</p>
+                  <p class="text-xs text-slate-500">Hazlo simple: constancia, variedad y equilibrio.</p>
+                </div>
+              </div>
+
+              <div class="relative overflow-hidden rounded-xl2 border border-slate-100 bg-white/90 backdrop-blur shadow-suave">
+                <img
+                  src="https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=1200&q=70"
+                  alt="Ingredientes frescos"
+                  class="h-44 w-full object-cover" />
+                <div class="p-4">
+                  <p class="text-sm font-semibold">Ingredientes frescos</p>
+                  <p class="text-xs text-slate-500">Tu lista de la compra, limpia y lista para compartir.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- PLANIFICADOR -->
+        <section id="vistaPlanificador" data-vista="planificador" class="vista">
+          <div class="rounded-xl2 border border-slate-100 bg-white/90 backdrop-blur shadow-suave p-4 sm:p-5 relative overflow-hidden">
+            <div class="pointer-events-none absolute -right-10 -bottom-10 h-40 w-40 rounded-full bg-primario-100/70 blur-3xl"></div>
+
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 class="text-lg sm:text-xl font-semibold tracking-tight">Planificador</h2>
+                <p class="text-sm text-slate-500">Semana o quincena, con selector inteligente por celda.</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button id="btnTipoPeriodo" class="chip">
+                  <span id="textoTipoPeriodo">Semana</span>
+                  <span class="text-slate-400">·</span>
+                  <span id="textoRangoPeriodo" class="font-medium">—</span>
+                </button>
+                <button id="btnPeriodoAnterior" class="chip-icono" aria-label="Periodo anterior">‹</button>
+                <button id="btnPeriodoSiguiente" class="chip-icono" aria-label="Periodo siguiente">›</button>
+              </div>
+            </div>
+
+            <div class="mt-4 overflow-x-auto scroll-sutil">
+              <table class="w-full text-xs sm:text-sm border-separate border-spacing-y-2 min-w-[720px]">
+                <thead>
+                  <tr class="text-slate-400">
+                    <th class="w-20 sm:w-24 text-left text-[11px] sm:text-xs font-medium uppercase tracking-wide">Momento</th>
+                    <th class="px-2 text-left font-medium">Lunes</th>
+                    <th class="px-2 text-left font-medium">Martes</th>
+                    <th class="px-2 text-left font-medium">Miércoles</th>
+                    <th class="px-2 text-left font-medium">Jueves</th>
+                    <th class="px-2 text-left font-medium">Viernes</th>
+                    <th class="px-2 text-left font-medium">Sábado</th>
+                    <th class="px-2 text-left font-medium">Domingo</th>
+                  </tr>
+                </thead>
+                <tbody id="tablaPlanificadorBody" class="align-top"></tbody>
+              </table>
+            </div>
+
+            <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <p class="text-xs text-slate-400">
+                Consejo: haz clic en una celda para buscar un plato o crear uno nuevo al vuelo.
+              </p>
+              <button id="btnGenerarLista" class="btn-primario">Generar lista de la compra</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- MIS PLATOS -->
+        <section id="vistaPlatos" data-vista="platos" class="vista">
+          <div class="grid lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)] gap-5">
+            <div class="rounded-xl2 border border-slate-100 bg-white/92 backdrop-blur shadow-suave p-4 sm:p-5 relative overflow-hidden">
+              <div class="pointer-events-none absolute -left-14 top-10 h-40 w-40 rounded-full bg-acento-100/70 blur-3xl"></div>
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <h2 class="text-lg sm:text-xl font-semibold tracking-tight">Mis Platos</h2>
+                  <p class="text-sm text-slate-500">Crea, edita y mantén tu biblioteca con fotos optimizadas.</p>
+                </div>
+                <span id="badgeEdicionPlato" class="hidden badge-edicion">Editando</span>
+              </div>
+
+              <form id="formPlato" class="mt-4 space-y-4">
+                <div class="space-y-1.5">
+                  <label for="nombrePlato" class="label-campo">Nombre del plato</label>
+                  <input id="nombrePlato" type="text" autocomplete="off" required class="input-campo"
+                    placeholder="Ej. Ensalada de quinoa con verduras" />
+                  <div id="sugerenciasPlatos"
+                    class="hidden mt-1 rounded-xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5 max-h-44 overflow-y-auto scroll-sutil text-xs">
+                  </div>
+                </div>
+
+                <div class="space-y-1.5">
+                  <label for="nuevoIngrediente" class="label-campo">Ingredientes</label>
+                  <p class="text-[11px] text-slate-400">
+                    Añade cada ingrediente por separado (opcionalmente con cantidades).
+                  </p>
+                  <div class="flex gap-2">
+                    <input id="nuevoIngrediente" type="text" class="input-campo flex-1"
+                      placeholder="Ej. 1 taza de quinoa, zanahoria, aceite de oliva..." />
+                    <button id="agregarIngredienteBtn" type="button" class="btn-negro">Añadir</button>
+                  </div>
+                  <div id="listaIngredientes" class="flex flex-wrap gap-1.5 pt-1 min-h-[1.5rem]"></div>
+                </div>
+
+                <div class="space-y-1.5">
+                  <label for="fotoPlato" class="label-campo">Foto del plato (opcional)</label>
+                  <p class="text-[11px] text-slate-400">
+                    Se redimensiona (máx. 500px) y se comprime para no saturar el almacenamiento local.
+                  </p>
+                  <div class="flex flex-col sm:flex-row gap-3 sm:items-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-3 py-3">
+                    <div class="flex-1 flex flex-col gap-2">
+                      <input id="fotoPlato" type="file" accept="image/*" class="input-archivo" />
+                      <p class="text-[11px] text-slate-400 flex items-center justify-between gap-2 flex-wrap">
+                        <span>Tamaño optimizado: <span id="tamanoFotoTexto">sin imagen</span></span>
+                        <span id="formatoFotoTexto" class="text-slate-400"></span>
+                      </p>
+                    </div>
+                    <div class="w-full sm:w-28 aspect-video rounded-2xl bg-slate-200/70 flex items-center justify-center overflow-hidden text-[11px] text-slate-500">
+                      <img id="previewFoto" src="" alt="Previsualización del plato" class="hidden w-full h-full object-cover" />
+                      <span id="previewTexto" class="px-2 text-center">Sin imagen</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pt-1 flex flex-wrap items-center gap-2">
+                  <button type="submit" id="guardarPlatoBtn" class="btn-primario">Guardar plato</button>
+                  <button type="button" id="cancelarEdicionBtn" class="btn-secundario hidden">Cancelar edición</button>
+                  <button type="button" id="resetFormularioBtn" class="btn-secundario">Limpiar formulario</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="rounded-xl2 border border-slate-100 bg-white/92 backdrop-blur shadow-suave p-4 sm:p-5">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="font-semibold tracking-tight">Biblioteca</h3>
+                <span id="contadorPlatos" class="contador">0 platos</span>
+              </div>
+              <div class="mt-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-3 overflow-y-auto scroll-sutil max-h-[520px]">
+                <ul id="listaPlatosGuardados" class="space-y-2 text-sm"></ul>
+                <p id="sinPlatosGuardados" class="text-[11px] text-slate-400 text-center mt-2">
+                  Aún no has guardado ningún plato.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- LISTA DE LA COMPRA -->
+        <section id="vistaLista" data-vista="lista" class="vista">
+          <div class="rounded-xl2 border border-slate-100 bg-white/92 backdrop-blur shadow-suave p-4 sm:p-5 relative overflow-hidden">
+            <div class="pointer-events-none absolute -left-12 -top-12 h-40 w-40 rounded-full bg-primario-100/60 blur-3xl"></div>
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 class="text-lg sm:text-xl font-semibold tracking-tight">Lista de la Compra</h2>
+                <p class="text-sm text-slate-500">Edita, marca lo que ya tienes y comparte por WhatsApp o Email.</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button id="btnRegenerarLista" class="btn-secundario">Regenerar desde planificador</button>
+                <button id="btnLimpiarLista" class="btn-secundario">Limpiar lista</button>
+              </div>
+            </div>
+
+            <div class="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-3 sm:p-4 overflow-y-auto scroll-sutil max-h-[520px] relative">
+              <ul id="listaCompra" class="space-y-2 text-sm text-slate-700"></ul>
+              <p id="listaCompraVacia" class="text-xs text-slate-400 text-center mt-2">
+                Aún no hay elementos. Genera la lista desde el Planificador.
+              </p>
+            </div>
+
+            <div class="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
+              <button id="btnCompartirWhatsapp" class="btn-whatsapp">Compartir por WhatsApp</button>
+              <button id="btnCompartirEmail" class="btn-negro flex-1">Compartir por Email</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- MODAL selector inteligente -->
+    <div id="modalSelector" class="modal hidden" role="dialog" aria-modal="true" aria-label="Selector de plato">
+      <div class="modal-fondo" data-cerrar-modal="1"></div>
+      <div class="modal-caja">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-xs uppercase tracking-wider text-slate-500 font-medium">Selector inteligente</p>
+            <h3 id="modalTitulo" class="text-base sm:text-lg font-semibold tracking-tight mt-1">Elegir plato</h3>
+            <p class="text-xs text-slate-500 mt-1">Busca un plato existente o escribe uno nuevo.</p>
+          </div>
+          <button class="chip-icono" data-cerrar-modal="1" aria-label="Cerrar">×</button>
+        </div>
+
+        <div class="mt-4 space-y-2">
+          <input id="selectorBusqueda" type="text" class="input-campo" placeholder="Escribe para buscar o crear..." autocomplete="off" />
+          <div id="selectorResultados" class="rounded-2xl border border-slate-200 bg-white max-h-56 overflow-y-auto scroll-sutil"></div>
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <button id="btnLimpiarCelda" class="btn-secundario">Dejar vacío</button>
+            <button id="btnConfirmarSelector" class="btn-primario">Asignar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  <script defer src="./app.js"></script>
+</body>
+
+</html>
+
