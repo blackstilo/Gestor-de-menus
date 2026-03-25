@@ -34,37 +34,48 @@ function crearEstadoInicial() {
 
 let estado = crearEstadoInicial();
 
-function cargarEstado() {
-  // V2
-  const raw = localStorage.getItem(STORAGE_V2);
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.version === 2) {
-        estado = parsed;
-        asegurarEstructura();
-        return;
-      }
-    } catch {
-      // si falla, intentamos migración
-    }
-  }
+async function cargarEstado() {
+  await window.db.initDB();
 
-  // Migración desde V1 (si existe)
-  const hayV1 =
-    localStorage.getItem(STORAGE_V1.platos) ||
-    localStorage.getItem(STORAGE_V1.calendario) ||
-    localStorage.getItem(STORAGE_V1.listaCompra) ||
-    localStorage.getItem(STORAGE_V1.periodo);
-
-  if (hayV1) {
-    migrarDesdeV1();
-    guardarEstado();
+  // V2 desde IndexedDB
+  const estadoDesdeDB = await window.db.get(window.db.STATE_STORE, 'appState');
+  if (estadoDesdeDB && estadoDesdeDB.version === 2) {
+    estado = estadoDesdeDB;
+    asegurarEstructura();
     return;
   }
 
-  // Si no hay nada, queda el inicial
-  guardarEstado();
+  // V2 desde localStorage (migración pendiente a IndexedDB)
+  const rawLS = localStorage.getItem(STORAGE_V2);
+  if (rawLS) {
+    try {
+      const parsed = JSON.parse(rawLS);
+      if (parsed && parsed.version === 2) {
+        estado = parsed;
+        asegurarEstructura();
+        await guardarEstado(); // Guardar en IndexedDB
+        localStorage.removeItem(STORAGE_V2); // Limpiar
+        return;
+      }
+    } catch {
+      // si falla, intentamos migración V1
+    }
+  }
+
+  // Migración desde V1 (localStorage)
+  const hayV1 =
+    Object.values(STORAGE_V1).some(key => localStorage.getItem(key));
+
+  if (hayV1) {
+    migrarDesdeV1();
+    await guardarEstado();
+    // Limpiar claves antiguas de V1
+    Object.values(STORAGE_V1).forEach(key => localStorage.removeItem(key));
+    return;
+  }
+
+  // Si no hay nada, guardar el estado inicial
+  await guardarEstado();
 }
 
 function asegurarEstructura() {
@@ -140,9 +151,9 @@ function migrarDesdeV1() {
   estado = nuevo;
 }
 
-function guardarEstado() {
+async function guardarEstado() {
   asegurarEstructura();
-  localStorage.setItem(STORAGE_V2, JSON.stringify(estado));
+  await window.db.set(window.db.STATE_STORE, 'appState', estado);
 }
 
 // ============
@@ -254,34 +265,36 @@ function alternarTipoPeriodo() {
 // Optimización de imágenes
 // ========================
 async function optimizarImagenArchivo(archivo, maxAncho = 500, calidad = 0.72) {
-  return new Promise((resolve, reject) => {
+  const dataUrl = await new Promise((resolve, reject) => {
     const lector = new FileReader();
-    lector.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return reject(new Error('No se pudo preparar el canvas.'));
-
-        const escala = maxAncho && img.width > maxAncho ? maxAncho / img.width : 1;
-        const nuevoAncho = Math.round(img.width * escala);
-        const nuevoAlto = Math.round(img.height * escala);
-
-        canvas.width = nuevoAncho;
-        canvas.height = nuevoAlto;
-        ctx.drawImage(img, 0, 0, nuevoAncho, nuevoAlto);
-
-        const soporteWebP = canvas.toDataURL('image/webp').startsWith('data:image/webp');
-        const formato = soporteWebP ? 'image/webp' : 'image/jpeg';
-        const dataUrl = canvas.toDataURL(formato, calidad);
-        resolve({ dataUrl, formato });
-      };
-      img.onerror = () => reject(new Error('No se pudo cargar la imagen.'));
-      img.src = lector.result;
-    };
+    lector.onload = () => resolve(lector.result);
     lector.onerror = () => reject(new Error('No se pudo leer el archivo.'));
     lector.readAsDataURL(archivo);
   });
+
+  const img = new Image();
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = () => reject(new Error('No se pudo cargar la imagen.'));
+    img.src = dataUrl;
+  });
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('No se pudo preparar el canvas.');
+
+  const escala = maxAncho && img.width > maxAncho ? maxAncho / img.width : 1;
+  canvas.width = Math.round(img.width * escala);
+  canvas.height = Math.round(img.height * escala);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+  const soporteWebP = canvas.toDataURL('image/webp').startsWith('data:image/webp');
+  const formato = soporteWebP ? 'image/webp' : 'image/jpeg';
+  
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, formato, calidad));
+  if (!blob) throw new Error('No se pudo generar el blob de la imagen.');
+
+  return { dataUrl: canvas.toDataURL(formato, calidad), formato, blob };
 }
 
 // ==========================
@@ -313,7 +326,19 @@ function renderIngredientes() {
     const pill = document.createElement('button');
     pill.type = 'button';
     pill.className = 'tag-pill inline-flex items-center gap-1 rounded-full bg-white border border-slate-200 px-2 py-1 text-[11px] text-slate-700';
-    pill.innerHTML = `<span class="truncate max-w-[180px]">${ing}</span><span class="text-slate-400 hover:text-red-500 text-xs">&times;</span>`;
+    
+    const textoSpan = document.createElement('span');
+    textoSpan.className = 'truncate max-w-[180px]';
+    textoSpan.textContent = ing;
+
+    const closeSpan = document.createElement('span');
+    closeSpan.className = 'text-slate-400 hover:text-red-500 text-xs';
+    closeSpan.textContent = '×';
+    closeSpan.setAttribute('aria-label', `Quitar ingrediente ${ing}`);
+
+    pill.appendChild(textoSpan);
+    pill.appendChild(closeSpan);
+
     pill.addEventListener('click', () => {
       ingredientesTemporales.splice(indice, 1);
       renderIngredientes();
@@ -474,6 +499,53 @@ function eliminarPlato(id) {
   renderPlanificador();
 }
 
+function createPlatoListItem(plato) {
+  const li = document.createElement('li');
+  li.className = 'group rounded-2xl bg-white border border-slate-200 hover:border-primario-500/60 hover:bg-primario-50/40 px-3 py-3 flex gap-3 items-center transition';
+
+  const mini = document.createElement('div');
+  mini.className = 'h-12 w-12 rounded-2xl bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center text-[10px] text-slate-400 border border-slate-200';
+  if (plato.foto && plato.foto.dataUrl) {
+    const img = document.createElement('img');
+    img.src = plato.foto.dataUrl;
+    img.alt = plato.nombre;
+    img.className = 'w-full h-full object-cover';
+    mini.appendChild(img);
+  } else {
+    mini.textContent = 'Sin foto';
+  }
+
+  const contenido = document.createElement('div');
+  contenido.className = 'flex-1 min-w-0';
+  contenido.innerHTML = `
+    <p class="text-sm font-semibold text-slate-800 truncate">${plato.nombre}</p>
+    <p class="text-[12px] text-slate-500 truncate">${(plato.ingredientes || []).length ? `${plato.ingredientes.length} ingrediente${plato.ingredientes.length !== 1 ? 's' : ''}` : 'Sin ingredientes'}</p>
+  `;
+
+  const acciones = document.createElement('div');
+  acciones.className = 'flex flex-col gap-1.5 items-end';
+
+  const btnEditar = document.createElement('button');
+  btnEditar.type = 'button';
+  btnEditar.className = 'inline-flex items-center justify-center rounded-full bg-slate-900 text-white text-[11px] px-2.5 py-1 hover:bg-slate-950 transition';
+  btnEditar.textContent = 'Editar';
+  btnEditar.addEventListener('click', () => cargarPlatoEnFormulario(plato));
+
+  const btnEliminar = document.createElement('button');
+  btnEliminar.type = 'button';
+  btnEliminar.className = 'inline-flex items-center justify-center rounded-full border border-slate-200 text-[11px] px-2.5 py-1 text-slate-600 hover:border-red-300 hover:text-red-600 transition';
+  btnEliminar.textContent = 'Eliminar';
+  btnEliminar.addEventListener('click', () => eliminarPlato(plato.id));
+
+  acciones.appendChild(btnEditar);
+  acciones.appendChild(btnEliminar);
+
+  li.appendChild(mini);
+  li.appendChild(contenido);
+  li.appendChild(acciones);
+  return li;
+}
+
 function renderPlatos() {
   const lista = document.getElementById('listaPlatosGuardados');
   const contador = document.getElementById('contadorPlatos');
@@ -482,57 +554,18 @@ function renderPlatos() {
 
   const arr = platosOrdenados();
   contador.textContent = `${arr.length} plato${arr.length !== 1 ? 's' : ''}`;
+  
   if (arr.length === 0) {
     vacio.classList.remove('hidden');
+    lista.classList.add('hidden');
     return;
   }
+  
   vacio.classList.add('hidden');
+  lista.classList.remove('hidden');
 
   arr.forEach((plato) => {
-    const li = document.createElement('li');
-    li.className = 'group rounded-2xl bg-white border border-slate-200 hover:border-primario-500/60 hover:bg-primario-50/40 px-3 py-3 flex gap-3 items-center transition';
-
-    const mini = document.createElement('div');
-    mini.className = 'h-12 w-12 rounded-2xl bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center text-[10px] text-slate-400 border border-slate-200';
-    if (plato.foto && plato.foto.dataUrl) {
-      const img = document.createElement('img');
-      img.src = plato.foto.dataUrl;
-      img.alt = plato.nombre;
-      img.className = 'w-full h-full object-cover';
-      mini.appendChild(img);
-    } else {
-      mini.textContent = 'Sin foto';
-    }
-
-    const contenido = document.createElement('div');
-    contenido.className = 'flex-1 min-w-0';
-    contenido.innerHTML = `
-      <p class="text-sm font-semibold text-slate-800 truncate">${plato.nombre}</p>
-      <p class="text-[12px] text-slate-500 truncate">${(plato.ingredientes || []).length ? `${plato.ingredientes.length} ingrediente${plato.ingredientes.length !== 1 ? 's' : ''}` : 'Sin ingredientes'}</p>
-    `;
-
-    const acciones = document.createElement('div');
-    acciones.className = 'flex flex-col gap-1.5 items-end';
-
-    const btnEditar = document.createElement('button');
-    btnEditar.type = 'button';
-    btnEditar.className = 'inline-flex items-center justify-center rounded-full bg-slate-900 text-white text-[11px] px-2.5 py-1 hover:bg-slate-950 transition';
-    btnEditar.textContent = 'Editar';
-    btnEditar.addEventListener('click', () => cargarPlatoEnFormulario(plato));
-
-    const btnEliminar = document.createElement('button');
-    btnEliminar.type = 'button';
-    btnEliminar.className = 'inline-flex items-center justify-center rounded-full border border-slate-200 text-[11px] px-2.5 py-1 text-slate-600 hover:border-red-300 hover:text-red-600 transition';
-    btnEliminar.textContent = 'Eliminar';
-    btnEliminar.addEventListener('click', () => eliminarPlato(plato.id));
-
-    acciones.appendChild(btnEditar);
-    acciones.appendChild(btnEliminar);
-
-    li.appendChild(mini);
-    li.appendChild(contenido);
-    li.appendChild(acciones);
-    lista.appendChild(li);
+    lista.appendChild(createPlatoListItem(plato));
   });
 }
 
@@ -574,6 +607,96 @@ function actualizarSugerenciasPlatos(texto) {
 // ===================
 // Sección: Planificador
 // ===================
+function createPlannerCell(diaClave, momentoClave, indiceDia, plan) {
+  const td = document.createElement('td');
+  td.className = 'px-1 sm:px-2 align-top';
+
+  const cont = document.createElement('div');
+  cont.className =
+    'w-full rounded-2xl border border-slate-200 bg-slate-50 px-2.5 py-2.5 sm:px-3 sm:py-3 transition min-h-[72px] flex flex-col gap-1.5 relative';
+
+  const claveAsignacion = `${indiceDia}-${momentoClave}`;
+  const asignacion = plan.asignaciones[claveAsignacion];
+  const ids = obtenerIdsDesdeAsignacion(asignacion);
+  const platosAsignados = ids
+    .map((id) => estado.platos.porId[id])
+    .filter(Boolean);
+
+  const cabecera = document.createElement('div');
+  cabecera.className = 'flex items-center justify-between gap-2';
+  cabecera.innerHTML = `
+    <span class="text-[10px] sm:text-[11px] text-slate-400 uppercase tracking-wide">${diaClave}</span>
+    <span class="text-[10px] text-slate-400">
+      ${platosAsignados.length ? `${platosAsignados.length} plato${platosAsignados.length !== 1 ? 's' : ''}` : 'Vacío'}
+    </span>
+  `;
+  cont.appendChild(cabecera);
+
+  const lista = document.createElement('ul');
+  lista.className =
+    'space-y-1 text-[11px] sm:text-xs text-slate-700 max-h-24 overflow-y-auto scroll-sutil pr-1';
+
+  if (platosAsignados.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'text-slate-400';
+    li.textContent = 'Haz clic en "+" para añadir platos.';
+    lista.appendChild(li);
+  } else {
+    platosAsignados.forEach((plato, idx) => {
+      const li = document.createElement('li');
+      li.className =
+        'flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-slate-200';
+
+      const nombreSpan = document.createElement('span');
+      nombreSpan.className = 'flex-1 truncate';
+      nombreSpan.textContent = plato.nombre;
+
+      const btnBorrar = document.createElement('button');
+      btnBorrar.type = 'button';
+      btnBorrar.className =
+        'text-[10px] text-slate-400 hover:text-red-500 px-1';
+      btnBorrar.textContent = '×';
+      btnBorrar.title = 'Quitar este plato';
+      btnBorrar.setAttribute('aria-label', `Quitar ${plato.nombre}`);
+      btnBorrar.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const actuales = obtenerIdsDesdeAsignacion(plan.asignaciones[claveAsignacion]);
+        const nuevosIds = actuales.filter((_, i) => i !== idx);
+        if (nuevosIds.length) {
+          plan.asignaciones[claveAsignacion] = { platos: nuevosIds };
+        } else {
+          delete plan.asignaciones[claveAsignacion];
+        }
+        guardarEstado();
+        renderPlanificador();
+      });
+
+      li.appendChild(nombreSpan);
+      li.appendChild(btnBorrar);
+      lista.appendChild(li);
+    });
+  }
+  cont.appendChild(lista);
+
+  const btnMas = document.createElement('button');
+  btnMas.type = 'button';
+  btnMas.className =
+    'absolute bottom-1.5 right-1.5 h-6 w-6 rounded-full bg-primario-500 text-white text-xs flex items-center justify-center shadow-sm hover:bg-primario-600 focus:outline-none focus:ring-2 focus:ring-primario-500/60';
+  btnMas.textContent = '+';
+  btnMas.title = 'Añadir plato';
+  btnMas.setAttribute('aria-label', 'Añadir plato');
+  btnMas.addEventListener('click', (e) => {
+    e.stopPropagation();
+    abrirSelectorParaCelda(indiceDia, momentoClave);
+  });
+  cont.appendChild(btnMas);
+
+  cont.addEventListener('click', () => abrirSelectorParaCelda(indiceDia, momentoClave));
+
+  td.appendChild(cont);
+  return td;
+}
+
 function renderPlanificador() {
   // Cabecera periodo
   document.getElementById('textoTipoPeriodo').textContent = estado.periodo.tipo === 'semana' ? 'Semana' : 'Quincena';
@@ -592,95 +715,7 @@ function renderPlanificador() {
     tr.appendChild(th);
 
     DIAS.forEach((diaClave, indiceDia) => {
-      const td = document.createElement('td');
-      td.className = 'px-1 sm:px-2 align-top';
-
-      const cont = document.createElement('div');
-      cont.className =
-        'w-full rounded-2xl border border-slate-200 bg-slate-50 px-2.5 py-2.5 sm:px-3 sm:py-3 transition min-h-[72px] flex flex-col gap-1.5 relative';
-
-      const claveAsignacion = `${indiceDia}-${momentoClave}`;
-      const asignacion = plan.asignaciones[claveAsignacion];
-      const ids = obtenerIdsDesdeAsignacion(asignacion);
-      const platosAsignados = ids
-        .map((id) => estado.platos.porId[id])
-        .filter(Boolean);
-
-      // cabecera pequeña con día y recuento
-      const cabecera = document.createElement('div');
-      cabecera.className = 'flex items-center justify-between gap-2';
-      cabecera.innerHTML = `
-        <span class="text-[10px] sm:text-[11px] text-slate-400 uppercase tracking-wide">${diaClave}</span>
-        <span class="text-[10px] text-slate-400">
-          ${platosAsignados.length ? `${platosAsignados.length} plato${platosAsignados.length !== 1 ? 's' : ''}` : 'Vacío'}
-        </span>
-      `;
-      cont.appendChild(cabecera);
-
-      // lista de platos dentro de la celda
-      const lista = document.createElement('ul');
-      lista.className =
-        'space-y-1 text-[11px] sm:text-xs text-slate-700 max-h-24 overflow-y-auto scroll-sutil pr-1';
-
-      if (platosAsignados.length === 0) {
-        const li = document.createElement('li');
-        li.className = 'text-slate-400';
-        li.textContent = 'Haz clic en "+" para añadir platos.';
-        lista.appendChild(li);
-      } else {
-        platosAsignados.forEach((plato, idx) => {
-          const li = document.createElement('li');
-          li.className =
-            'flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-slate-200';
-
-          const nombreSpan = document.createElement('span');
-          nombreSpan.className = 'flex-1 truncate';
-          nombreSpan.textContent = plato.nombre;
-
-          const btnBorrar = document.createElement('button');
-          btnBorrar.type = 'button';
-          btnBorrar.className =
-            'text-[10px] text-slate-400 hover:text-red-500 px-1';
-          btnBorrar.textContent = '×';
-          btnBorrar.title = 'Quitar este plato';
-          btnBorrar.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const actuales = obtenerIdsDesdeAsignacion(plan.asignaciones[claveAsignacion]);
-            const nuevosIds = actuales.filter((_, i) => i !== idx);
-            if (nuevosIds.length) {
-              plan.asignaciones[claveAsignacion] = { platos: nuevosIds };
-            } else {
-              delete plan.asignaciones[claveAsignacion];
-            }
-            guardarEstado();
-            renderPlanificador();
-          });
-
-          li.appendChild(nombreSpan);
-          li.appendChild(btnBorrar);
-          lista.appendChild(li);
-        });
-      }
-      cont.appendChild(lista);
-
-      // botón "+" siempre visible
-      const btnMas = document.createElement('button');
-      btnMas.type = 'button';
-      btnMas.className =
-        'absolute bottom-1.5 right-1.5 h-6 w-6 rounded-full bg-primario-500 text-white text-xs flex items-center justify-center shadow-sm hover:bg-primario-600 focus:outline-none focus:ring-2 focus:ring-primario-500/60';
-      btnMas.textContent = '+';
-      btnMas.title = 'Añadir plato';
-      btnMas.addEventListener('click', (e) => {
-        e.stopPropagation();
-        abrirSelectorParaCelda(indiceDia, momentoClave);
-      });
-      cont.appendChild(btnMas);
-
-      // clic en el contenedor también abre el selector
-      cont.addEventListener('click', () => abrirSelectorParaCelda(indiceDia, momentoClave));
-
-      td.appendChild(cont);
-      tr.appendChild(td);
+      tr.appendChild(createPlannerCell(diaClave, momentoClave, indiceDia, plan));
     });
 
     tbody.appendChild(tr);
@@ -863,6 +898,53 @@ function generarListaCompraDesdePlanActual() {
   renderListaCompra();
 }
 
+function createListaCompraItem(item) {
+  const li = document.createElement('li');
+  li.className = 'group flex items-center gap-2 rounded-2xl px-2 py-2 hover:bg-white transition border border-transparent hover:border-slate-200';
+
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.className = 'h-4 w-4 rounded border-slate-300 text-primario-500';
+  checkbox.checked = !!item.marcado;
+  checkbox.addEventListener('change', () => {
+    item.marcado = checkbox.checked;
+    guardarEstado();
+  });
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = item.texto || '';
+  input.className = 'flex-1 bg-transparent text-sm text-slate-700 focus:outline-none';
+  input.addEventListener('change', () => {
+    const nuevoTexto = (input.value || '').trim();
+    if (nuevoTexto) {
+      item.texto = nuevoTexto;
+      guardarEstado();
+    } else {
+      // Si el texto se borra, eliminamos el item
+      estado.listaCompra.items = estado.listaCompra.items.filter((x) => x.id !== item.id);
+      guardarEstado();
+      renderListaCompra();
+    }
+  });
+
+  const btnEliminar = document.createElement('button');
+  btnEliminar.type = 'button';
+  btnEliminar.className = 'opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 text-xs transition px-2';
+  btnEliminar.textContent = 'Eliminar';
+  btnEliminar.setAttribute('aria-label', `Eliminar ${item.texto}`);
+  btnEliminar.addEventListener('click', () => {
+    estado.listaCompra.items = estado.listaCompra.items.filter((x) => x.id !== item.id);
+    guardarEstado();
+    renderListaCompra();
+  });
+
+  li.appendChild(checkbox);
+  li.appendChild(input);
+  li.appendChild(btnEliminar);
+  return li;
+}
+
 function renderListaCompra() {
   const ul = document.getElementById('listaCompra');
   const vacio = document.getElementById('listaCompraVacia');
@@ -871,46 +953,14 @@ function renderListaCompra() {
   const items = estado.listaCompra.items || [];
   if (items.length === 0) {
     vacio.classList.remove('hidden');
+    ul.classList.add('hidden');
     return;
   }
   vacio.classList.add('hidden');
+  ul.classList.remove('hidden');
 
   items.forEach((item) => {
-    const li = document.createElement('li');
-    li.className = 'group flex items-center gap-2 rounded-2xl px-2 py-2 hover:bg-white transition border border-transparent hover:border-slate-200';
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.className = 'h-4 w-4 rounded border-slate-300 text-primario-500';
-    checkbox.checked = !!item.marcado;
-    checkbox.addEventListener('change', () => {
-      item.marcado = checkbox.checked;
-      guardarEstado();
-    });
-
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = item.texto || '';
-    input.className = 'flex-1 bg-transparent text-sm text-slate-700 focus:outline-none';
-    input.addEventListener('change', () => {
-      item.texto = (input.value || '').trim();
-      guardarEstado();
-    });
-
-    const btnEliminar = document.createElement('button');
-    btnEliminar.type = 'button';
-    btnEliminar.className = 'opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 text-xs transition px-2';
-    btnEliminar.textContent = 'Eliminar';
-    btnEliminar.addEventListener('click', () => {
-      estado.listaCompra.items = estado.listaCompra.items.filter((x) => x.id !== item.id);
-      guardarEstado();
-      renderListaCompra();
-    });
-
-    li.appendChild(checkbox);
-    li.appendChild(input);
-    li.appendChild(btnEliminar);
-    ul.appendChild(li);
+    ul.appendChild(createListaCompraItem(item));
   });
 }
 
@@ -941,10 +991,24 @@ function compartirEmail() {
 // ============
 // Acciones globales
 // ============
-function limpiarTodo() {
+async function limpiarTodo() {
   if (!confirm('¿Seguro que quieres borrar TODOS los datos (platos, planificador y lista de la compra)?')) return;
+  
+  // Limpiar estado en memoria
   estado = crearEstadoInicial();
-  guardarEstado();
+  
+  // Limpiar IndexedDB
+  await window.db.clear(window.db.STATE_STORE);
+  await window.db.clear(window.db.IMAGES_STORE);
+  
+  // Guardar el estado inicial limpio en DB
+  await guardarEstado();
+  
+  // Limpiar localStorage por si quedaran restos de versiones antiguas
+  localStorage.removeItem(STORAGE_V2);
+  Object.values(STORAGE_V1).forEach(key => localStorage.removeItem(key));
+
+  // Actualizar UI
   resetearFormularioPlato();
   renderPlatos();
   renderPlanificador();
@@ -1026,8 +1090,8 @@ function renderTodo() {
   renderListaCompra();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  cargarEstado();
+document.addEventListener('DOMContentLoaded', async () => {
+  await cargarEstado();
   conectarEventos();
   renderTodo();
 });
