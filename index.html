@@ -5,6 +5,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Gestor de Menús Saludables</title>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#16a34a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="./icono.png">
 
   <!-- Tipografía moderna -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -519,6 +524,7 @@
                 </button>
                 <button id="btnPeriodoAnterior" class="chip-icono" aria-label="Periodo anterior">‹</button>
                 <button id="btnPeriodoSiguiente" class="chip-icono" aria-label="Periodo siguiente">›</button>
+                <button id="btnExportPdf" class="btn-secundario">Exportar a PDF</button>
               </div>
             </div>
 
@@ -560,6 +566,13 @@
                   <p class="text-sm text-slate-500">Crea, edita y mantén tu biblioteca con fotos optimizadas.</p>
                 </div>
                 <span id="badgeEdicionPlato" class="hidden badge-edicion">Editando</span>
+              </div>
+              <div class="mt-3 flex flex-wrap items-center gap-2">
+                <button id="btnExportBackup" type="button" class="btn-secundario">Exportar copia de seguridad</button>
+                <label class="btn-secundario cursor-pointer">
+                  Importar backup
+                  <input id="inputImportBackup" type="file" accept=".json" class="hidden" />
+                </label>
               </div>
 
               <form id="formPlato" class="mt-4 space-y-4">
@@ -683,7 +696,9 @@
       </div>
     </div>
 
-  <script defer src="./db.js"></script>
+  <script type="module" src="./db.js"></script>
+  <script type="module" src="./ui.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script defer src="./app.js"></script>
 </body>
 

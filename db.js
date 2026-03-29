@@ -124,3 +124,5 @@ window.db = {
   STATE_STORE,
   IMAGES_STORE,
 };
+
+export { initDB, get, set, del, clear, STATE_STORE, IMAGES_STORE };

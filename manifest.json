@@ -1,0 +1,20 @@
+{
+  "name": "Gestor de Menús Saludables",
+  "short_name": "Menús",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#16a34a",
+  "icons": [
+    {
+      "src": "./icono.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./icono.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

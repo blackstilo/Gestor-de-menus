@@ -32,7 +32,7 @@ function crearEstadoInicial() {
   };
 }
 
-let estado = crearEstadoInicial();
+var estado = crearEstadoInicial();
 
 async function cargarEstado() {
   await window.db.initDB();
@@ -537,7 +537,19 @@ function createPlatoListItem(plato) {
   btnEliminar.textContent = 'Eliminar';
   btnEliminar.addEventListener('click', () => eliminarPlato(plato.id));
 
+  const btnCompartir = document.createElement('button');
+  btnCompartir.type = 'button';
+  btnCompartir.className = 'inline-flex items-center justify-center rounded-full border border-slate-200 text-[11px] px-2.5 py-1 text-slate-600 hover:border-sky-300 hover:text-sky-600 transition';
+  btnCompartir.textContent = 'Compartir';
+  btnCompartir.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (typeof window.compartirPlato === 'function') {
+      window.compartirPlato(plato);
+    }
+  });
+
   acciones.appendChild(btnEditar);
+  acciones.appendChild(btnCompartir);
   acciones.appendChild(btnEliminar);
 
   li.appendChild(mini);
@@ -1042,6 +1054,11 @@ function conectarEventos() {
     generarListaCompraDesdePlanActual();
     navegarA('#/lista');
   });
+  document.getElementById('btnExportPdf').addEventListener('click', () => {
+    if (typeof window.exportarPlanificadorAPdf === 'function') {
+      window.exportarPlanificadorAPdf();
+    }
+  });
 
   // Modal selector
   document.getElementById('selectorBusqueda').addEventListener('input', (e) => {
@@ -1070,6 +1087,19 @@ function conectarEventos() {
   document.getElementById('formPlato').addEventListener('submit', guardarPlatoDesdeFormulario);
   document.getElementById('resetFormularioBtn').addEventListener('click', resetearFormularioPlato);
   document.getElementById('cancelarEdicionBtn').addEventListener('click', resetearFormularioPlato);
+  document.getElementById('btnExportBackup').addEventListener('click', () => {
+    if (typeof window.exportarBackup === 'function') {
+      window.exportarBackup();
+    }
+  });
+  document.getElementById('inputImportBackup').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (typeof window.importarBackupOPlato === 'function') {
+      await window.importarBackupOPlato(file);
+    }
+    e.target.value = '';
+  });
 
   const nombre = document.getElementById('nombrePlato');
   nombre.addEventListener('input', (e) => actualizarSugerenciasPlatos(e.target.value));
@@ -1094,5 +1124,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   await cargarEstado();
   conectarEventos();
   renderTodo();
+
+  if ('serviceWorker' in navigator) {
+    try {
+      await navigator.serviceWorker.register('./service-worker.js');
+      if (window.mostrarToast) {
+        window.mostrarToast('App lista para usar sin conexión');
+      }
+    } catch (error) {
+      console.warn('Error al registrar el service worker:', error);
+    }
+  }
 });
 
