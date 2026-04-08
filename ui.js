@@ -910,3 +910,83 @@ export function renderTodo() {
   renderPlanificador();
   renderListaCompra();
 }
+
+/**
+ * Genera el QR de transferencia: contenedor vacío y tamaño fijo.
+ * @param {string} datos Cadena Base64
+ * @param {{ sinFotos?: boolean }} [opciones]
+ */
+export function mostrarModalQR(datos, opciones = {}) {
+  const container = document.getElementById('qrcode');
+  if (!container) return;
+  container.innerHTML = '';
+  const info = document.getElementById('textoTransferenciaInfo');
+  const sinFotos = !!opciones.sinFotos;
+
+  if (!datos || datos.length > 2000) {
+    if (info) {
+      info.textContent = 'Demasiados datos para QR, usa el botón Copiar Código';
+    }
+    return;
+  }
+
+  if (typeof QRCode === 'undefined') {
+    container.textContent = 'Librería QR no disponible.';
+    return;
+  }
+
+  if (info) {
+    info.textContent = sinFotos
+      ? 'Se generó versión ligera sin imágenes para mantener un QR legible.'
+      : 'Escanea este QR desde otro dispositivo o copia el código.';
+  }
+
+  new QRCode(container, { text: datos, width: 256, height: 256 });
+}
+
+function conectarEventosTransferenciaUI() {
+  const lista = document.getElementById('listaPlatosGuardados');
+  if (lista) {
+    lista.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-qr');
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const id = btn.getAttribute('data-plato-id');
+      if (id && typeof window.abrirModalTransferencia === 'function') {
+        window.abrirModalTransferencia('uno', [id]);
+      }
+    });
+  }
+
+  const btnCopiar = document.getElementById('btnCopiarCodigoTransferencia');
+  if (btnCopiar && !btnCopiar.dataset.boundUi) {
+    btnCopiar.dataset.boundUi = '1';
+    btnCopiar.addEventListener('click', async () => {
+      const cadena =
+        (typeof window.codigoTransferenciaActual === 'string' && window.codigoTransferenciaActual) ||
+        (document.getElementById('transferenciaCodigoTexto') &&
+          document.getElementById('transferenciaCodigoTexto').value) ||
+        '';
+      if (!cadena) return;
+      try {
+        await navigator.clipboard.writeText(cadena);
+        mostrarToast('Código copiado. Puedes enviarlo por mensaje');
+      } catch {
+        const ta = document.getElementById('transferenciaCodigoTexto');
+        if (ta) {
+          ta.focus();
+          ta.select();
+          document.execCommand('copy');
+          mostrarToast('Código copiado. Puedes enviarlo por mensaje');
+        }
+      }
+    });
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  conectarEventosTransferenciaUI();
+});
+
+window.mostrarModalQR = mostrarModalQR;

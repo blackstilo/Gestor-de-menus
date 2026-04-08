@@ -638,14 +638,12 @@ function createPlatoListItem(plato) {
 
   const btnQr = document.createElement('button');
   btnQr.type = 'button';
-  btnQr.className = 'inline-flex items-center justify-center rounded-full border border-slate-200 text-[11px] px-2 py-1 text-slate-600 hover:border-emerald-300 hover:text-emerald-700 transition';
+  btnQr.className =
+    'btn-qr inline-flex items-center justify-center rounded-full border border-slate-200 text-[11px] px-2 py-1 text-slate-600 hover:border-emerald-300 hover:text-emerald-700 transition';
   btnQr.textContent = 'QR';
   btnQr.title = 'Transferir este plato por QR';
   btnQr.setAttribute('aria-label', `Transferir ${plato.nombre} por QR`);
-  btnQr.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    await abrirModalTransferencia('uno', [plato.id]);
-  });
+  btnQr.setAttribute('data-plato-id', plato.id);
 
   acciones.appendChild(btnEditar);
   acciones.appendChild(btnQr);
@@ -1193,30 +1191,21 @@ async function abrirModalTransferencia(tipo, ids = []) {
   try {
     const data = await prepararPaqueteTransferencia(tipo, ids);
     codigoTransferenciaActual = data.cadenaBase64;
+    window.codigoTransferenciaActual = data.cadenaBase64;
     const modal = document.getElementById('modalTransferencia');
-    const info = document.getElementById('textoTransferenciaInfo');
-    const qrContenedor = document.getElementById('qrcode') || document.getElementById('transferenciaQr');
     const texto = document.getElementById('transferenciaCodigoTexto');
-    if (!modal || !qrContenedor || !texto) return;
+    if (!modal || !texto) return;
 
-    qrContenedor.innerHTML = '';
-    if (typeof QRCode === 'function') {
-      const tam = data.longitud > 1800 ? 196 : 240;
-      new QRCode(qrContenedor, {
-        text: data.cadenaBase64,
-        width: tam,
-        height: tam,
-        colorDark: '#0f172a',
-        colorLight: '#ffffff',
-        correctLevel: QRCode.CorrectLevel.M
-      });
-    } else {
-      qrContenedor.textContent = 'No se pudo generar el QR (librería no disponible).';
-    }
     texto.value = data.cadenaBase64;
-    info.textContent = data.sinFotos
-      ? 'Se generó versión ligera sin imágenes para mantener un QR legible.'
-      : 'Escanea este QR desde otro dispositivo o copia el código.';
+    if (typeof window.mostrarModalQR === 'function') {
+      window.mostrarModalQR(data.cadenaBase64, { sinFotos: data.sinFotos });
+    } else {
+      const qrContenedor = document.getElementById('qrcode') || document.getElementById('transferenciaQr');
+      if (qrContenedor) {
+        qrContenedor.innerHTML = '';
+        qrContenedor.textContent = 'No se pudo cargar el generador de QR (ui.js).';
+      }
+    }
     modal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
 
@@ -1234,22 +1223,6 @@ function cerrarModalTransferencia() {
   if (!modal) return;
   modal.classList.add('hidden');
   document.body.style.overflow = '';
-}
-
-async function copiarCodigoTransferencia() {
-  if (!codigoTransferenciaActual) return;
-  try {
-    await navigator.clipboard.writeText(codigoTransferenciaActual);
-    notificar('Código copiado. Puedes enviarlo por mensaje');
-  } catch {
-    const textarea = document.getElementById('transferenciaCodigoTexto');
-    if (textarea) {
-      textarea.focus();
-      textarea.select();
-      document.execCommand('copy');
-      notificar('Código copiado. Puedes enviarlo por mensaje');
-    }
-  }
 }
 
 async function iniciarEscanerTransferencia() {
@@ -1342,133 +1315,18 @@ async function importarTransferenciaDesdeModal() {
 // ======================
 // Sección: Lista de compra
 // ======================
-const UNIDADES_ALIAS = {
-  g: 'g',
-  gr: 'g',
-  gramo: 'g',
-  gramos: 'g',
-  kg: 'kg',
-  kilo: 'kg',
-  kilos: 'kg',
-  kilogramo: 'kg',
-  kilogramos: 'kg',
-  ml: 'ml',
-  mililitro: 'ml',
-  mililitros: 'ml',
-  l: 'l',
-  lt: 'l',
-  litro: 'l',
-  litros: 'l',
-  u: 'unidad',
-  ud: 'unidad',
-  uds: 'unidad',
-  unidad: 'unidad',
-  unidades: 'unidad',
-  bote: 'bote',
-  botes: 'bote',
-  pizca: 'pizca',
-  pizcas: 'pizca',
-  lata: 'lata',
-  latas: 'lata',
-  paquete: 'paquete',
-  paquetes: 'paquete',
-  diente: 'diente',
-  dientes: 'diente',
-  cucharada: 'cucharada',
-  cucharadas: 'cucharada',
-  cucharadita: 'cucharadita',
-  cucharaditas: 'cucharadita'
-};
-
-function normalizarComparacionTexto(valor) {
-  return (valor || '')
-    .toString()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-function numeroLegible(valor) {
-  const redondeado = Math.round(valor * 100) / 100;
-  return Number.isInteger(redondeado) ? String(redondeado) : redondeado.toFixed(2).replace(/\.?0+$/, '');
-}
-
-function normalizarUnidadCruda(unidad) {
-  const limpia = normalizarComparacionTexto(unidad).replace(/\./g, '');
-  return UNIDADES_ALIAS[limpia] || '';
-}
-
-function obtenerGrupoUnidad(unidadCanonica) {
-  if (unidadCanonica === 'g' || unidadCanonica === 'kg') return 'masa';
-  if (unidadCanonica === 'ml' || unidadCanonica === 'l') return 'volumen';
-  return 'otros';
-}
-
-function convertirABase(cantidad, unidadCanonica) {
-  if (unidadCanonica === 'kg') return { cantidadBase: cantidad * 1000, unidadBase: 'g' };
-  if (unidadCanonica === 'l') return { cantidadBase: cantidad * 1000, unidadBase: 'ml' };
-  return { cantidadBase: cantidad, unidadBase: unidadCanonica };
-}
-
 function extraerIngrediente(ingredienteTexto) {
-  const original = (ingredienteTexto || '').toString().trim();
-  if (!original) return null;
-
-  let trabajo = original.replace(/\s+/g, ' ').trim();
-  let cantidad = 1;
-  let unidadCanonica = 'unidad';
-  let producto = trabajo;
-
-  // 1) cantidad inicial, 2) unidad opcional, 3) resto limpio
-  const baseMatch = trabajo.match(/^\s*(\d+(?:[.,]\d+)?)\s*([a-zA-Záéíóúüñ.]+)?\s*(.*)$/);
-  if (baseMatch) {
-    const n = parseFloat((baseMatch[1] || '').replace(',', '.'));
-    cantidad = !Number.isFinite(n) || n <= 0 ? 1 : n;
-    const unidadDetectada = normalizarUnidadCruda(baseMatch[2] || '');
-    unidadCanonica = unidadDetectada || 'unidad';
-    trabajo = (baseMatch[3] || '').trim();
+  if (typeof window.extraerIngredienteParaListaCompra === 'function') {
+    return window.extraerIngredienteParaListaCompra(ingredienteTexto);
   }
-
-  producto = trabajo
-    .replace(/^(de|del|la|el|los|las)\s+/i, '')
-    .replace(/^\d+(?:[.,]\d+)?\s*/, '')
-    .replace(/^(de|del|la|el|los|las)\s+/i, '')
-    .trim();
-  if (!producto) producto = original;
-
-  const nombreNormalizado = normalizarComparacionTexto(producto);
-  if (!nombreNormalizado) return null;
-
-  const grupoUnidad = obtenerGrupoUnidad(unidadCanonica);
-  const conversion = convertirABase(cantidad, unidadCanonica);
-  const claveUnidad = grupoUnidad === 'otros' ? unidadCanonica : conversion.unidadBase;
-
-  return {
-    cantidad: conversion.cantidadBase,
-    unidad: claveUnidad || 'unidad',
-    productoOriginal: nombreNormalizado,
-    productoNormalizado: nombreNormalizado
-  };
+  return null;
 }
 
 function formatearIngredienteAgrupado(producto, unidadBase, cantidadBase) {
-  let unidadSalida = unidadBase;
-  let cantidadSalida = cantidadBase;
-
-  if (unidadBase === 'g' && cantidadBase >= 1000) {
-    unidadSalida = 'kg';
-    cantidadSalida = cantidadBase / 1000;
-  } else if (unidadBase === 'ml' && cantidadBase >= 1000) {
-    unidadSalida = 'l';
-    cantidadSalida = cantidadBase / 1000;
+  if (typeof window.formatearLineaListaCompra === 'function') {
+    return window.formatearLineaListaCompra(cantidadBase, producto, unidadBase);
   }
-
-  if (unidadSalida === 'unidad' || unidadSalida === 'unidades') {
-    return `${numeroLegible(cantidadSalida)} ${producto}`.trim();
-  }
-  return `${numeroLegible(cantidadSalida)} ${unidadSalida} de ${producto}`.trim();
+  return `${producto}`;
 }
 
 function generarListaCompraDesdePlanActual() {
@@ -1740,8 +1598,6 @@ function conectarEventos() {
   document.querySelectorAll('[data-cerrar-transferencia="1"]').forEach((el) => {
     el.addEventListener('click', cerrarModalTransferencia);
   });
-  document.getElementById('btnCopiarCodigoTransferencia').addEventListener('click', copiarCodigoTransferencia);
-
   document.getElementById('btnAbrirEscanerTransferencia').addEventListener('click', abrirModalEscanerTransferencia);
   document.querySelectorAll('[data-cerrar-escaner-transferencia="1"]').forEach((el) => {
     el.addEventListener('click', () => {
@@ -1786,6 +1642,7 @@ window.limpiarListaCompra = limpiarListaCompra;
 window.obtenerTextoListaCompra = obtenerTextoListaCompra;
 window.prepararDatosParaTransferencia = prepararDatosParaTransferencia;
 window.procesarTransferenciaRecibida = procesarTransferenciaRecibida;
+window.abrirModalTransferencia = abrirModalTransferencia;
 
 document.addEventListener('DOMContentLoaded', async () => {
   await cargarEstado();

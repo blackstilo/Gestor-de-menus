@@ -102,6 +102,218 @@ export function procesarTransferenciaRecibida(cadenaBase64) {
   return proxyCall('procesarTransferenciaRecibida', cadenaBase64);
 }
 
+// --- Ingredientes: parseo y lista de la compra (lógica pura, sin depender del estado) ---
+
+const RE_INGREDIENTE_INICIO = /^(\d+(?:[.,]\d+)?)\s*([a-zA-ZáéíóúÁÉÍÓÚ]+)?\s*(.*)$/;
+
+const UNIDAD_A_CANON = {
+  g: 'g',
+  gr: 'g',
+  gramo: 'g',
+  gramos: 'g',
+  kg: 'kg',
+  kilo: 'kg',
+  kilos: 'kg',
+  ml: 'ml',
+  l: 'l',
+  lt: 'l',
+  litro: 'l',
+  litros: 'l',
+  bote: 'bote',
+  botes: 'bote',
+  ud: 'unidad',
+  uds: 'unidad',
+  u: 'unidad',
+  unidad: 'unidad',
+  unidades: 'unidades'
+};
+
+function normalizarPalabraClave(palabra) {
+  return (palabra || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+export function normalizarNombreAgrupacion(texto) {
+  return (texto || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function esUnidadConocida(palabra) {
+  const k = normalizarPalabraClave(palabra);
+  return k && Object.prototype.hasOwnProperty.call(UNIDAD_A_CANON, k);
+}
+
+function canonUnidad(palabra) {
+  const k = normalizarPalabraClave(palabra);
+  return UNIDAD_A_CANON[k] || '';
+}
+
+function limpiarConectoresNombre(resto) {
+  let t = (resto || '').trim();
+  for (let i = 0; i < 12; i += 1) {
+    const siguiente = t
+      .replace(/^(de\s+los|de|del|la|el|los|las)\s+/i, '')
+      .trim();
+    if (siguiente === t) break;
+    t = siguiente;
+  }
+  return t;
+}
+
+function quitarNumeroDuplicadoAlInicio(nombre) {
+  return (nombre || '').replace(/^(\d+(?:[.,]\d+)?)\s+/, '').trim();
+}
+
+/**
+ * Parsea un ingrediente según regex inicial de cantidad y unidad opcional.
+ * @returns {{ cantidad: number, unidad: string, nombreLimpio: string, nombreNormalizado: string }}
+ */
+export function parsearIngrediente(texto) {
+  const original = (texto || '').toString().replace(/\s+/g, ' ').trim();
+  if (!original) {
+    return null;
+  }
+
+  if (!/^\d/.test(original)) {
+    const nombreLimpio = limpiarConectoresNombre(original);
+    const nombreNormalizado = normalizarNombreAgrupacion(nombreLimpio);
+    if (!nombreNormalizado) return null;
+    return {
+      cantidad: 1,
+      unidad: 'generico',
+      nombreLimpio,
+      nombreNormalizado
+    };
+  }
+
+  const m = original.match(RE_INGREDIENTE_INICIO);
+  if (!m) {
+    const nombreLimpio = limpiarConectoresNombre(original);
+    return {
+      cantidad: 1,
+      unidad: 'generico',
+      nombreLimpio,
+      nombreNormalizado: normalizarNombreAgrupacion(nombreLimpio)
+    };
+  }
+
+  const n = parseFloat((m[1] || '').replace(',', '.'));
+  const cantidad = !Number.isFinite(n) || n <= 0 ? 1 : n;
+  const palabra2 = (m[2] || '').trim();
+  const restoBruto = (m[3] || '').trim();
+
+  let nombreParte;
+  let unidad;
+
+  if (palabra2 && esUnidadConocida(palabra2)) {
+    unidad = canonUnidad(palabra2);
+    nombreParte = limpiarConectoresNombre(restoBruto);
+    nombreParte = quitarNumeroDuplicadoAlInicio(nombreParte);
+  } else {
+    unidad = 'unidades';
+    nombreParte = [palabra2, restoBruto].filter(Boolean).join(' ').trim();
+    nombreParte = limpiarConectoresNombre(nombreParte);
+    nombreParte = quitarNumeroDuplicadoAlInicio(nombreParte);
+  }
+
+  if (!nombreParte) {
+    nombreParte = original;
+  }
+
+  const nombreNormalizado = normalizarNombreAgrupacion(nombreParte);
+  if (!nombreNormalizado) return null;
+
+  return {
+    cantidad,
+    unidad,
+    nombreLimpio: nombreParte,
+    nombreNormalizado
+  };
+}
+
+function numeroLegibleLista(valor) {
+  const redondeado = Math.round(valor * 100) / 100;
+  return Number.isInteger(redondeado) ? String(redondeado) : redondeado.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function convertirAUnidadBase(cantidad, unidadCanon) {
+  if (unidadCanon === 'kg') return { cantidadBase: cantidad * 1000, unidadBase: 'g' };
+  if (unidadCanon === 'l') return { cantidadBase: cantidad * 1000, unidadBase: 'ml' };
+  return { cantidadBase: cantidad, unidadBase: unidadCanon };
+}
+
+function obtenerGrupoUnidad(unidadCanon) {
+  if (unidadCanon === 'g' || unidadCanon === 'kg') return 'masa';
+  if (unidadCanon === 'ml' || unidadCanon === 'l') return 'volumen';
+  return 'otros';
+}
+
+/**
+ * Devuelve estructura para acumulación en la lista de la compra (compatible con app.js).
+ */
+export function extraerIngredienteParaListaCompra(texto) {
+  const parsed = parsearIngrediente(texto);
+  if (!parsed || !parsed.nombreNormalizado) return null;
+
+  let unidadCanon = parsed.unidad;
+  if (unidadCanon === 'generico' || unidadCanon === 'unidades') {
+    unidadCanon = 'unidad';
+  }
+
+  const grupo = obtenerGrupoUnidad(unidadCanon === 'unidad' ? 'unidad' : unidadCanon);
+  const conv =
+    grupo === 'masa' || grupo === 'volumen'
+      ? convertirAUnidadBase(parsed.cantidad, unidadCanon)
+      : { cantidadBase: parsed.cantidad, unidadBase: unidadCanon };
+
+  const claveUnidad =
+    grupo === 'otros' ? unidadCanon : conv.unidadBase;
+
+  return {
+    cantidad: conv.cantidadBase,
+    unidad: claveUnidad || 'unidad',
+    productoOriginal: parsed.nombreNormalizado,
+    productoNormalizado: parsed.nombreNormalizado
+  };
+}
+
+/**
+ * Formatea una línea de lista ya agrupada.
+ */
+export function formatearLineaListaCompra(cantidadTotal, nombreNormalizado, unidadBase) {
+  let unidadSalida = unidadBase;
+  let cantidadSalida = cantidadTotal;
+
+  if (unidadBase === 'g' && cantidadTotal >= 1000) {
+    unidadSalida = 'kg';
+    cantidadSalida = cantidadTotal / 1000;
+  } else if (unidadBase === 'ml' && cantidadTotal >= 1000) {
+    unidadSalida = 'l';
+    cantidadSalida = cantidadTotal / 1000;
+  }
+
+  if (unidadSalida === 'unidad' || unidadSalida === 'unidades' || unidadSalida === 'generico') {
+    return `${numeroLegibleLista(cantidadSalida)} ${nombreNormalizado}`.trim();
+  }
+
+  return `${numeroLegibleLista(cantidadSalida)} ${unidadSalida} de ${nombreNormalizado}`.trim();
+}
+
+if (typeof window !== 'undefined') {
+  window.parsearIngrediente = parsearIngrediente;
+  window.extraerIngredienteParaListaCompra = extraerIngredienteParaListaCompra;
+  window.formatearLineaListaCompra = formatearLineaListaCompra;
+}
+
 function mostrarToastMensaje(mensaje, tipo = 'success') {
   if (typeof window.mostrarToast === 'function') {
     window.mostrarToast(mensaje, tipo);
