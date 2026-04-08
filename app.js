@@ -1040,7 +1040,7 @@ async function empaquetarPayloadTransferencia(payload) {
     encoding: compactado.comprimido ? 'gzip+base64' : 'plain+base64',
     payload: bytesABase64(compactado.bytes)
   };
-  return btoa(unescape(encodeURIComponent(JSON.stringify(sobre))));
+  return bytesABase64(new TextEncoder().encode(JSON.stringify(sobre)));
 }
 
 async function desempaquetarCadenaTransferencia(cadenaBase64) {
@@ -1050,7 +1050,7 @@ async function desempaquetarCadenaTransferencia(cadenaBase64) {
 
   let sobre;
   try {
-    const sobreTexto = decodeURIComponent(escape(atob(cadenaBase64.trim())));
+    const sobreTexto = new TextDecoder().decode(base64ABytes(cadenaBase64.trim()));
     sobre = JSON.parse(sobreTexto);
   } catch {
     throw new Error('El código no tiene un formato válido.');
@@ -1077,7 +1077,7 @@ async function desempaquetarCadenaTransferencia(cadenaBase64) {
   return data;
 }
 
-async function prepararDatosParaTransferencia(tipo, ids = []) {
+async function prepararPaqueteTransferencia(tipo, ids = []) {
   const payloadCompleto = obtenerPayloadTransferencia(tipo, ids, false);
   let cadena = await empaquetarPayloadTransferencia(payloadCompleto);
   let sinFotos = false;
@@ -1094,6 +1094,11 @@ async function prepararDatosParaTransferencia(tipo, ids = []) {
     longitud: cadena.length,
     modo: tipo
   };
+}
+
+async function prepararDatosParaTransferencia(tipo, ids = []) {
+  const paquete = await prepararPaqueteTransferencia(tipo, ids);
+  return paquete.cadenaBase64;
 }
 
 function analizarTransferencia(data) {
@@ -1186,11 +1191,11 @@ async function procesarTransferenciaRecibida(cadenaBase64) {
 
 async function abrirModalTransferencia(tipo, ids = []) {
   try {
-    const data = await prepararDatosParaTransferencia(tipo, ids);
+    const data = await prepararPaqueteTransferencia(tipo, ids);
     codigoTransferenciaActual = data.cadenaBase64;
     const modal = document.getElementById('modalTransferencia');
     const info = document.getElementById('textoTransferenciaInfo');
-    const qrContenedor = document.getElementById('transferenciaQr');
+    const qrContenedor = document.getElementById('qrcode') || document.getElementById('transferenciaQr');
     const texto = document.getElementById('transferenciaCodigoTexto');
     if (!modal || !qrContenedor || !texto) return;
 
@@ -1416,34 +1421,21 @@ function extraerIngrediente(ingredienteTexto) {
   let unidadCanonica = 'unidad';
   let producto = trabajo;
 
-  const numeroYUnidadPegados = trabajo.match(/^(\d+(?:[.,]\d+)?)\s*([a-zA-Záéíóúüñ]+)/);
-  if (numeroYUnidadPegados) {
-    const n = parseFloat(numeroYUnidadPegados[1].replace(',', '.'));
+  // 1) cantidad inicial, 2) unidad opcional, 3) resto limpio
+  const baseMatch = trabajo.match(/^\s*(\d+(?:[.,]\d+)?)\s*([a-zA-Záéíóúüñ.]+)?\s*(.*)$/);
+  if (baseMatch) {
+    const n = parseFloat((baseMatch[1] || '').replace(',', '.'));
     cantidad = !Number.isFinite(n) || n <= 0 ? 1 : n;
-    unidadCanonica = normalizarUnidadCruda(numeroYUnidadPegados[2]) || 'unidad';
-    trabajo = trabajo.slice(numeroYUnidadPegados[0].length).trim();
-  } else {
-    const numeroInicial = trabajo.match(/^(\d+(?:[.,]\d+)?)/);
-    if (numeroInicial) {
-      const n = parseFloat(numeroInicial[1].replace(',', '.'));
-      cantidad = !Number.isFinite(n) || n <= 0 ? 1 : n;
-      trabajo = trabajo.slice(numeroInicial[0].length).trim();
-
-      const palabraUnidad = trabajo.match(/^([a-zA-Záéíóúüñ.]+)/);
-      if (palabraUnidad) {
-        const unidadEncontrada = normalizarUnidadCruda(palabraUnidad[1]);
-        if (unidadEncontrada) {
-          unidadCanonica = unidadEncontrada;
-          trabajo = trabajo.slice(palabraUnidad[0].length).trim();
-        }
-      }
-    } else {
-      cantidad = 1;
-      unidadCanonica = 'unidad';
-    }
+    const unidadDetectada = normalizarUnidadCruda(baseMatch[2] || '');
+    unidadCanonica = unidadDetectada || 'unidad';
+    trabajo = (baseMatch[3] || '').trim();
   }
 
-  producto = trabajo.replace(/^(de|del|la|el|los|las)\s+/i, '').trim();
+  producto = trabajo
+    .replace(/^(de|del|la|el|los|las)\s+/i, '')
+    .replace(/^\d+(?:[.,]\d+)?\s*/, '')
+    .replace(/^(de|del|la|el|los|las)\s+/i, '')
+    .trim();
   if (!producto) producto = original;
 
   const nombreNormalizado = normalizarComparacionTexto(producto);
@@ -1456,7 +1448,7 @@ function extraerIngrediente(ingredienteTexto) {
   return {
     cantidad: conversion.cantidadBase,
     unidad: claveUnidad || 'unidad',
-    productoOriginal: producto,
+    productoOriginal: nombreNormalizado,
     productoNormalizado: nombreNormalizado
   };
 }
@@ -1473,11 +1465,10 @@ function formatearIngredienteAgrupado(producto, unidadBase, cantidadBase) {
     cantidadSalida = cantidadBase / 1000;
   }
 
-  const unidadTexto = unidadSalida === 'unidad'
-    ? (cantidadSalida === 1 ? 'unidad' : 'unidades')
-    : unidadSalida;
-
-  return `${numeroLegible(cantidadSalida)} ${unidadTexto} de ${producto}`.trim();
+  if (unidadSalida === 'unidad' || unidadSalida === 'unidades') {
+    return `${numeroLegible(cantidadSalida)} ${producto}`.trim();
+  }
+  return `${numeroLegible(cantidadSalida)} ${unidadSalida} de ${producto}`.trim();
 }
 
 function generarListaCompraDesdePlanActual() {
