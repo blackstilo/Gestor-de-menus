@@ -503,45 +503,171 @@ export function renderPlanificador() {
   }
 }
 
-export async function exportarPlanificadorAPdf() {
+function escaparHtmlPdf(valor) {
+  return escapeHTML(valor || '');
+}
+
+function obtenerFilasPlanParaPdf() {
+  const dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  const momentos = ['Almuerzo', 'Comida', 'Cena'];
+  const plan = obtenerPlanActual();
+
+  return momentos.map((momento) => {
+    const celdas = dias.map((_, indiceDia) => {
+      const clave = `${indiceDia}-${momento}`;
+      const ids = obtenerIdsDesdeAsignacion(plan.asignaciones[clave]);
+      const nombres = ids
+        .map((id) => estado.platos.porId[id])
+        .filter(Boolean)
+        .map((plato) => plato.nombre);
+      return nombres.length ? nombres : ['—'];
+    });
+    return { momento, celdas };
+  });
+}
+
+function construirHtmlPlanPdf({ logoDataUrl, mostrarListaCompra }) {
+  const dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  const filas = obtenerFilasPlanParaPdf();
+  const rango = formatearRangoPeriodo();
+  const tipo = estado.periodo.tipo === 'semana' ? 'Plan semanal' : 'Plan quincenal';
+  const hoy = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const listaItems = (estado.listaCompra.items || []).map((it) => it.texto).filter(Boolean);
+
+  const tablaHtml = `
+    <table class="tabla-plan">
+      <thead>
+        <tr>
+          <th>Momento</th>
+          ${dias.map((dia) => `<th>${escaparHtmlPdf(dia)}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${filas.map((fila) => `
+          <tr>
+            <td class="momento">${escaparHtmlPdf(fila.momento)}</td>
+            ${fila.celdas.map((c) => `<td>${c.map((n) => `<div class="plato">${escaparHtmlPdf(n)}</div>`).join('')}</td>`).join('')}
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  const listaHtml = mostrarListaCompra && listaItems.length
+    ? `
+      <section class="pagina salto">
+        <header class="cabecera">
+          <div class="marca">
+            ${logoDataUrl
+              ? `<img src="${logoDataUrl}" alt="Logo" class="logo" />`
+              : '<div class="logo-fallback">GM</div>'}
+            <div>
+              <h2>Lista de la compra</h2>
+              <p>${escaparHtmlPdf(rango)}</p>
+            </div>
+          </div>
+          <p class="fecha">Generado el ${escaparHtmlPdf(hoy)}</p>
+        </header>
+        <ol class="lista-compra-pdf">
+          ${listaItems.map((texto) => `<li>${escaparHtmlPdf(texto)}</li>`).join('')}
+        </ol>
+      </section>
+    `
+    : '';
+
+  return `
+    <div class="pdf-root">
+      <style>
+        .pdf-root { font-family: "Inter", Arial, sans-serif; color: #0f172a; }
+        .pagina { width: 100%; min-height: 180mm; box-sizing: border-box; padding: 8mm 6mm; }
+        .salto { page-break-before: always; }
+        .cabecera { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 2px solid #10b981; padding-bottom: 10px; }
+        .marca { display: flex; align-items: center; gap: 10px; }
+        .logo { width: 38px; height: 38px; border-radius: 10px; object-fit: cover; border: 1px solid #d1d5db; }
+        .logo-fallback { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; color: #065f46; font-weight: 700; background: #d1fae5; border: 1px solid #6ee7b7; }
+        h1, h2 { margin: 0; font-size: 18px; color: #064e3b; }
+        p { margin: 2px 0 0; color: #475569; font-size: 11px; }
+        .fecha { font-size: 10px; color: #64748b; }
+        .tabla-plan { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 10px; }
+        .tabla-plan thead th { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 8px 6px; font-weight: 700; }
+        .tabla-plan thead th:first-child { border-top-left-radius: 8px; }
+        .tabla-plan thead th:last-child { border-top-right-radius: 8px; }
+        .tabla-plan td { vertical-align: top; border: 1px solid #e2e8f0; padding: 6px; background: #ffffff; min-height: 54px; }
+        .tabla-plan td.momento { background: #f8fafc; color: #334155; font-weight: 600; width: 11%; }
+        .plato { background: #f8fafc; border: 1px solid #e2e8f0; color: #1e293b; border-radius: 999px; padding: 2px 7px; margin-bottom: 4px; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
+        .lista-compra-pdf { margin: 0; padding-left: 18px; column-count: 2; column-gap: 20px; }
+        .lista-compra-pdf li { break-inside: avoid; margin-bottom: 6px; font-size: 11px; color: #1e293b; }
+      </style>
+
+      <section class="pagina">
+        <header class="cabecera">
+          <div class="marca">
+            ${logoDataUrl
+              ? `<img src="${logoDataUrl}" alt="Logo" class="logo" />`
+              : '<div class="logo-fallback">GM</div>'}
+            <div>
+              <h1>${escaparHtmlPdf(tipo)}</h1>
+              <p>${escaparHtmlPdf(rango)}</p>
+            </div>
+          </div>
+          <p class="fecha">Generado el ${escaparHtmlPdf(hoy)}</p>
+        </header>
+        ${tablaHtml}
+      </section>
+      ${listaHtml}
+    </div>
+  `;
+}
+
+async function obtenerLogoDataUrlPdf() {
+  try {
+    const res = await fetch('./icono.png');
+    if (!res.ok) return '';
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result || '');
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    return '';
+  }
+}
+
+export async function exportarPlanAPDF() {
   if (typeof html2pdf === 'undefined') {
     mostrarToast('La librería para PDF no está disponible.', 'danger');
     return;
   }
 
   mostrarToast('Generando PDF...');
-  const fuente = document.getElementById('vistaPlanificador');
-  if (!fuente) {
-    mostrarToast('No se encontró el planificador.', 'danger');
-    return;
-  }
-
-  const copia = fuente.cloneNode(true);
-  copia.style.width = '297mm';
-  copia.style.minHeight = '210mm';
-  copia.style.boxSizing = 'border-box';
-  copia.style.padding = '16px';
-  copia.style.background = 'white';
-  copia.style.overflow = 'visible';
-
-  copia.querySelectorAll('button').forEach((btn) => btn.remove());
+  const logoDataUrl = await obtenerLogoDataUrlPdf();
+  const incluirLista = (estado.listaCompra.items || []).length > 0;
+  const html = construirHtmlPlanPdf({ logoDataUrl, mostrarListaCompra: incluirLista });
+  const contenedor = document.createElement('div');
+  contenedor.innerHTML = html;
+  contenedor.style.width = '297mm';
+  contenedor.style.background = '#ffffff';
+  contenedor.style.color = '#0f172a';
 
   const contenedorTemporal = document.createElement('div');
   contenedorTemporal.style.position = 'fixed';
   contenedorTemporal.style.top = '-9999px';
-  contenedorTemporal.appendChild(copia);
+  contenedorTemporal.style.left = '-9999px';
+  contenedorTemporal.appendChild(contenedor);
   document.body.appendChild(contenedorTemporal);
 
   try {
     await html2pdf()
       .set({
-        margin: 10,
-        filename: 'planificador_menus_saludables.pdf',
+        margin: [8, 8, 8, 8],
+        filename: `plan_${estado.periodo.tipo}_${estado.periodo.inicioISO.slice(0, 10)}.pdf`,
         image: { type: 'jpeg', quality: 0.96 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
       })
-      .from(copia)
+      .from(contenedor)
       .save();
     mostrarToast('PDF generado correctamente.');
   } catch (error) {
@@ -552,7 +678,8 @@ export async function exportarPlanificadorAPdf() {
   }
 }
 
-window.exportarPlanificadorAPdf = exportarPlanificadorAPdf;
+window.exportarPlanAPDF = exportarPlanAPDF;
+window.exportarPlanificadorAPdf = exportarPlanAPDF;
 
 export function abrirModalSelector() {
   document.getElementById('modalSelector').classList.remove('hidden');

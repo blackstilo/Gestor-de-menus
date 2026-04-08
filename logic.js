@@ -94,6 +94,14 @@ export function obtenerTextoListaCompra() {
   return proxyCall('obtenerTextoListaCompra');
 }
 
+export function prepararDatosParaTransferencia(tipo, ids = []) {
+  return proxyCall('prepararDatosParaTransferencia', tipo, ids);
+}
+
+export function procesarTransferenciaRecibida(cadenaBase64) {
+  return proxyCall('procesarTransferenciaRecibida', cadenaBase64);
+}
+
 function mostrarToastMensaje(mensaje, tipo = 'success') {
   if (typeof window.mostrarToast === 'function') {
     window.mostrarToast(mensaje, tipo);

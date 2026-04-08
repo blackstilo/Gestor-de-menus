@@ -41,6 +41,7 @@ async function cargarEstado() {
   const estadoDesdeDB = await window.db.get(window.db.STATE_STORE, 'appState');
   if (estadoDesdeDB && estadoDesdeDB.version === 2) {
     estado = estadoDesdeDB;
+    window.estado = estado;
     asegurarEstructura();
     return;
   }
@@ -52,6 +53,7 @@ async function cargarEstado() {
       const parsed = JSON.parse(rawLS);
       if (parsed && parsed.version === 2) {
         estado = parsed;
+        window.estado = estado;
         asegurarEstructura();
         await guardarEstado(); // Guardar en IndexedDB
         localStorage.removeItem(STORAGE_V2); // Limpiar
@@ -79,7 +81,10 @@ async function cargarEstado() {
 }
 
 function asegurarEstructura() {
-  if (!estado || typeof estado !== 'object') estado = crearEstadoInicial();
+  if (!estado || typeof estado !== 'object') {
+    estado = crearEstadoInicial();
+    window.estado = estado;
+  }
   if (!estado.periodo) estado.periodo = crearEstadoInicial().periodo;
   if (!estado.platos) estado.platos = { porId: {}, orden: [] };
   if (!estado.platos.porId) estado.platos.porId = {};
@@ -149,6 +154,7 @@ function migrarDesdeV1() {
   }));
 
   estado = nuevo;
+  window.estado = estado;
 }
 
 async function guardarEstado() {
@@ -199,6 +205,69 @@ function crearId() {
 
 function normalizarTexto(s) {
   return (s || '').trim().toLowerCase();
+}
+
+function normalizarNombreComparacion(s) {
+  return (s || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function notificar(mensaje, tipo = 'success') {
+  if (typeof window.mostrarToast === 'function') {
+    window.mostrarToast(mensaje, tipo);
+    return;
+  }
+  alert(mensaje);
+}
+
+function bytesABase64(bytes) {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function base64ABytes(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function comprimirTexto(texto) {
+  if (typeof CompressionStream === 'undefined') {
+    return { bytes: new TextEncoder().encode(texto), comprimido: false };
+  }
+  const cs = new CompressionStream('gzip');
+  const writer = cs.writable.getWriter();
+  await writer.write(new TextEncoder().encode(texto));
+  await writer.close();
+  const buffer = await new Response(cs.readable).arrayBuffer();
+  return { bytes: new Uint8Array(buffer), comprimido: true };
+}
+
+async function descomprimirTexto(bytes, comprimido) {
+  if (!comprimido) {
+    return new TextDecoder().decode(bytes);
+  }
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('Este dispositivo no soporta descompresión gzip.');
+  }
+  const ds = new DecompressionStream('gzip');
+  const writer = ds.writable.getWriter();
+  await writer.write(bytes);
+  await writer.close();
+  const buffer = await new Response(ds.readable).arrayBuffer();
+  return new TextDecoder().decode(buffer);
 }
 
 function obtenerLunesDeEstaSemana(fecha = new Date()) {
@@ -303,6 +372,10 @@ async function optimizarImagenArchivo(archivo, maxAncho = 500, calidad = 0.72) {
 let ingredientesTemporales = [];
 let fotoOptimizadaActual = null;
 let platoEnEdicionId = null;
+let platosSeleccionadosParaTransferir = new Set();
+let codigoTransferenciaActual = '';
+let html5QrReader = null;
+let transferenciaAnalizadaActual = null;
 
 function platosOrdenados() {
   return estado.platos.orden
@@ -477,6 +550,7 @@ function guardarPlatoDesdeFormulario(evento) {
 
 function eliminarPlato(id) {
   if (!confirm('¿Seguro que quieres eliminar este plato? Se quitará también del planificador.')) return;
+  platosSeleccionadosParaTransferir.delete(id);
   delete estado.platos.porId[id];
   estado.platos.orden = estado.platos.orden.filter((x) => x !== id);
 
@@ -497,11 +571,25 @@ function eliminarPlato(id) {
   guardarEstado();
   renderPlatos();
   renderPlanificador();
+  actualizarBotonCompartirSeleccionados();
 }
 
 function createPlatoListItem(plato) {
   const li = document.createElement('li');
   li.className = 'group rounded-2xl bg-white border border-slate-200 hover:border-primario-500/60 hover:bg-primario-50/40 px-3 py-3 flex gap-3 items-center transition';
+
+  const selector = document.createElement('input');
+  selector.type = 'checkbox';
+  selector.className = 'h-4 w-4 rounded border-slate-300 text-emerald-600';
+  selector.checked = platosSeleccionadosParaTransferir.has(plato.id);
+  selector.title = 'Seleccionar para compartir';
+  selector.setAttribute('aria-label', `Seleccionar ${plato.nombre} para compartir`);
+  selector.addEventListener('click', (e) => e.stopPropagation());
+  selector.addEventListener('change', () => {
+    if (selector.checked) platosSeleccionadosParaTransferir.add(plato.id);
+    else platosSeleccionadosParaTransferir.delete(plato.id);
+    actualizarBotonCompartirSeleccionados();
+  });
 
   const mini = document.createElement('div');
   mini.className = 'h-12 w-12 rounded-2xl bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center text-[10px] text-slate-400 border border-slate-200';
@@ -548,14 +636,35 @@ function createPlatoListItem(plato) {
     }
   });
 
+  const btnQr = document.createElement('button');
+  btnQr.type = 'button';
+  btnQr.className = 'inline-flex items-center justify-center rounded-full border border-slate-200 text-[11px] px-2 py-1 text-slate-600 hover:border-emerald-300 hover:text-emerald-700 transition';
+  btnQr.textContent = 'QR';
+  btnQr.title = 'Transferir este plato por QR';
+  btnQr.setAttribute('aria-label', `Transferir ${plato.nombre} por QR`);
+  btnQr.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await abrirModalTransferencia('uno', [plato.id]);
+  });
+
   acciones.appendChild(btnEditar);
+  acciones.appendChild(btnQr);
   acciones.appendChild(btnCompartir);
   acciones.appendChild(btnEliminar);
 
+  li.appendChild(selector);
   li.appendChild(mini);
   li.appendChild(contenido);
   li.appendChild(acciones);
   return li;
+}
+
+function actualizarBotonCompartirSeleccionados() {
+  const btn = document.getElementById('btnCompartirSeleccionados');
+  if (!btn) return;
+  const total = platosSeleccionadosParaTransferir.size;
+  btn.textContent = `Compartir seleccionados (${total})`;
+  btn.classList.toggle('hidden', total === 0);
 }
 
 function renderPlatos() {
@@ -570,6 +679,7 @@ function renderPlatos() {
   if (arr.length === 0) {
     vacio.classList.remove('hidden');
     lista.classList.add('hidden');
+    actualizarBotonCompartirSeleccionados();
     return;
   }
   
@@ -579,6 +689,7 @@ function renderPlatos() {
   arr.forEach((plato) => {
     lista.appendChild(createPlatoListItem(plato));
   });
+  actualizarBotonCompartirSeleccionados();
 }
 
 // Autocompletado (Mis Platos)
@@ -880,11 +991,506 @@ function limpiarCeldaSelector() {
 }
 
 // ======================
+// Sección: Transferencia offline (QR/Base64)
+// ======================
+function obtenerPayloadTransferencia(tipo, ids = [], sinFotos = false) {
+  const payload = {
+    tipo: 'transferencia_menus',
+    version: 1,
+    modo: tipo,
+    creadoEn: new Date().toISOString(),
+    periodo: estado.periodo
+  };
+
+  if (tipo === 'uno' || tipo === 'varios') {
+    const unicos = [...new Set(ids)].filter(Boolean);
+    const platos = unicos
+      .map((id) => estado.platos.porId[id])
+      .filter(Boolean)
+      .map((plato) => {
+        if (!sinFotos) return plato;
+        const clon = { ...plato };
+        delete clon.foto;
+        return clon;
+      });
+    payload.platos = platos;
+    return payload;
+  }
+
+  if (tipo === 'todo') {
+    const platos = platosOrdenados().map((plato) => {
+      if (!sinFotos) return plato;
+      const clon = { ...plato };
+      delete clon.foto;
+      return clon;
+    });
+    payload.platos = platos;
+    payload.planActual = obtenerPlanActual();
+    return payload;
+  }
+
+  throw new Error('Tipo de transferencia no válido.');
+}
+
+async function empaquetarPayloadTransferencia(payload) {
+  const json = JSON.stringify(payload);
+  const compactado = await comprimirTexto(json);
+  const sobre = {
+    version: 1,
+    encoding: compactado.comprimido ? 'gzip+base64' : 'plain+base64',
+    payload: bytesABase64(compactado.bytes)
+  };
+  return btoa(unescape(encodeURIComponent(JSON.stringify(sobre))));
+}
+
+async function desempaquetarCadenaTransferencia(cadenaBase64) {
+  if (!cadenaBase64 || typeof cadenaBase64 !== 'string') {
+    throw new Error('Cadena de transferencia vacía.');
+  }
+
+  let sobre;
+  try {
+    const sobreTexto = decodeURIComponent(escape(atob(cadenaBase64.trim())));
+    sobre = JSON.parse(sobreTexto);
+  } catch {
+    throw new Error('El código no tiene un formato válido.');
+  }
+
+  if (!sobre || !sobre.payload || !sobre.encoding) {
+    throw new Error('Código de transferencia incompleto.');
+  }
+
+  const bytes = base64ABytes(sobre.payload);
+  const comprimido = sobre.encoding === 'gzip+base64';
+  const json = await descomprimirTexto(bytes, comprimido);
+
+  let data;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new Error('No se pudo interpretar la carga de transferencia.');
+  }
+
+  if (!data || data.tipo !== 'transferencia_menus' || !Array.isArray(data.platos)) {
+    throw new Error('El contenido no corresponde a una transferencia válida.');
+  }
+  return data;
+}
+
+async function prepararDatosParaTransferencia(tipo, ids = []) {
+  const payloadCompleto = obtenerPayloadTransferencia(tipo, ids, false);
+  let cadena = await empaquetarPayloadTransferencia(payloadCompleto);
+  let sinFotos = false;
+
+  if (cadena.length > 2500) {
+    const payloadLigero = obtenerPayloadTransferencia(tipo, ids, true);
+    cadena = await empaquetarPayloadTransferencia(payloadLigero);
+    sinFotos = true;
+  }
+
+  return {
+    cadenaBase64: cadena,
+    sinFotos,
+    longitud: cadena.length,
+    modo: tipo
+  };
+}
+
+function analizarTransferencia(data) {
+  const idsExistentes = new Set(Object.keys(estado.platos.porId || {}));
+  const nombresExistentes = new Set(
+    platosOrdenados().map((p) => normalizarNombreComparacion(p.nombre))
+  );
+  let nuevos = 0;
+  let duplicados = 0;
+
+  (data.platos || []).forEach((plato) => {
+    const nombreNorm = normalizarNombreComparacion(plato.nombre);
+    if (!plato || (!plato.id && !plato.nombre)) return;
+    if ((plato.id && idsExistentes.has(plato.id)) || (nombreNorm && nombresExistentes.has(nombreNorm))) {
+      duplicados += 1;
+    } else {
+      nuevos += 1;
+    }
+  });
+
+  return {
+    total: (data.platos || []).length,
+    nuevos,
+    duplicados
+  };
+}
+
+async function procesarTransferenciaRecibida(cadenaBase64) {
+  const data = await desempaquetarCadenaTransferencia(cadenaBase64);
+  const idsExistentes = new Set(Object.keys(estado.platos.porId || {}));
+  const nombreAId = new Map(
+    platosOrdenados().map((p) => [normalizarNombreComparacion(p.nombre), p.id])
+  );
+  const mapaIdImportadoANuevo = new Map();
+  let incorporados = 0;
+
+  (data.platos || []).forEach((platoEntrada) => {
+    if (!platoEntrada || !platoEntrada.nombre) return;
+    const nombreNorm = normalizarNombreComparacion(platoEntrada.nombre);
+
+    if (platoEntrada.id && idsExistentes.has(platoEntrada.id)) {
+      mapaIdImportadoANuevo.set(platoEntrada.id, platoEntrada.id);
+      return;
+    }
+    if (nombreAId.has(nombreNorm)) {
+      mapaIdImportadoANuevo.set(platoEntrada.id, nombreAId.get(nombreNorm));
+      return;
+    }
+
+    const idFinal = platoEntrada.id && !idsExistentes.has(platoEntrada.id)
+      ? platoEntrada.id
+      : crearId();
+    const nuevo = {
+      id: idFinal,
+      nombre: platoEntrada.nombre,
+      ingredientes: Array.isArray(platoEntrada.ingredientes) ? [...platoEntrada.ingredientes] : [],
+      foto: platoEntrada.foto && platoEntrada.foto.dataUrl ? { ...platoEntrada.foto } : null,
+      actualizadoEn: Date.now()
+    };
+    estado.platos.porId[idFinal] = nuevo;
+    estado.platos.orden.unshift(idFinal);
+    idsExistentes.add(idFinal);
+    nombreAId.set(nombreNorm, idFinal);
+    if (platoEntrada.id) mapaIdImportadoANuevo.set(platoEntrada.id, idFinal);
+    incorporados += 1;
+  });
+
+  if (data.modo === 'todo' && data.planActual && data.planActual.asignaciones) {
+    const claveDestino = clavePeriodoActual();
+    if (!estado.planes[claveDestino]) estado.planes[claveDestino] = { asignaciones: {} };
+    const destino = estado.planes[claveDestino].asignaciones;
+
+    Object.keys(data.planActual.asignaciones).forEach((clave) => {
+      const ids = obtenerIdsDesdeAsignacion(data.planActual.asignaciones[clave]);
+      const mapeados = ids
+        .map((id) => mapaIdImportadoANuevo.get(id) || (estado.platos.porId[id] ? id : null))
+        .filter(Boolean);
+      if (!mapeados.length) return;
+      const existentes = obtenerIdsDesdeAsignacion(destino[clave]);
+      const fusionados = [...new Set([...existentes, ...mapeados])];
+      destino[clave] = { platos: fusionados };
+    });
+  }
+
+  await guardarEstado();
+  renderPlatos();
+  renderPlanificador();
+  return { importados: incorporados, totalRecibidos: (data.platos || []).length };
+}
+
+async function abrirModalTransferencia(tipo, ids = []) {
+  try {
+    const data = await prepararDatosParaTransferencia(tipo, ids);
+    codigoTransferenciaActual = data.cadenaBase64;
+    const modal = document.getElementById('modalTransferencia');
+    const info = document.getElementById('textoTransferenciaInfo');
+    const qrContenedor = document.getElementById('transferenciaQr');
+    const texto = document.getElementById('transferenciaCodigoTexto');
+    if (!modal || !qrContenedor || !texto) return;
+
+    qrContenedor.innerHTML = '';
+    if (typeof QRCode === 'function') {
+      const tam = data.longitud > 1800 ? 196 : 240;
+      new QRCode(qrContenedor, {
+        text: data.cadenaBase64,
+        width: tam,
+        height: tam,
+        colorDark: '#0f172a',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    } else {
+      qrContenedor.textContent = 'No se pudo generar el QR (librería no disponible).';
+    }
+    texto.value = data.cadenaBase64;
+    info.textContent = data.sinFotos
+      ? 'Se generó versión ligera sin imágenes para mantener un QR legible.'
+      : 'Escanea este QR desde otro dispositivo o copia el código.';
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+
+    if (data.sinFotos) {
+      notificar('Transferencia ligera: se excluyeron imágenes por tamaño.', 'warning');
+    }
+  } catch (error) {
+    console.error(error);
+    notificar(error.message || 'No se pudo generar la transferencia.', 'danger');
+  }
+}
+
+function cerrarModalTransferencia() {
+  const modal = document.getElementById('modalTransferencia');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+async function copiarCodigoTransferencia() {
+  if (!codigoTransferenciaActual) return;
+  try {
+    await navigator.clipboard.writeText(codigoTransferenciaActual);
+    notificar('Código copiado. Puedes enviarlo por mensaje');
+  } catch {
+    const textarea = document.getElementById('transferenciaCodigoTexto');
+    if (textarea) {
+      textarea.focus();
+      textarea.select();
+      document.execCommand('copy');
+      notificar('Código copiado. Puedes enviarlo por mensaje');
+    }
+  }
+}
+
+async function iniciarEscanerTransferencia() {
+  if (typeof Html5Qrcode !== 'function') return;
+  if (html5QrReader) return;
+  html5QrReader = new Html5Qrcode('visorEscanerTransferencia');
+  try {
+    await html5QrReader.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 220, height: 220 } },
+      (decodedText) => {
+        const input = document.getElementById('codigoManualTransferencia');
+        if (input && !input.value) {
+          input.value = decodedText;
+        }
+      },
+      () => {}
+    );
+  } catch {
+    notificar('No se pudo iniciar la cámara. Usa pegar código manual.', 'warning');
+  }
+}
+
+async function detenerEscanerTransferencia() {
+  if (!html5QrReader) return;
+  try {
+    if (html5QrReader.isScanning) {
+      await html5QrReader.stop();
+    }
+    await html5QrReader.clear();
+  } catch {
+    // noop
+  } finally {
+    html5QrReader = null;
+  }
+}
+
+async function abrirModalEscanerTransferencia() {
+  const modal = document.getElementById('modalEscanerTransferencia');
+  if (!modal) return;
+  transferenciaAnalizadaActual = null;
+  const resumen = document.getElementById('resumenTransferenciaRecibida');
+  if (resumen) resumen.textContent = '';
+  modal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  await iniciarEscanerTransferencia();
+}
+
+async function cerrarModalEscanerTransferencia() {
+  const modal = document.getElementById('modalEscanerTransferencia');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  document.body.style.overflow = '';
+  await detenerEscanerTransferencia();
+}
+
+async function analizarTransferenciaDesdeInput() {
+  const input = document.getElementById('codigoManualTransferencia');
+  const resumen = document.getElementById('resumenTransferenciaRecibida');
+  const codigo = (input && input.value ? input.value.trim() : '');
+  if (!codigo) {
+    notificar('Pega o escanea un código antes de analizar.', 'warning');
+    return null;
+  }
+
+  const data = await desempaquetarCadenaTransferencia(codigo);
+  const analisis = analizarTransferencia(data);
+  transferenciaAnalizadaActual = { codigo, data, analisis };
+
+  if (resumen) {
+    resumen.textContent = `Se han detectado ${analisis.nuevos} platos nuevos y ${analisis.duplicados} repetidos (total ${analisis.total}). ¿Deseas añadirlos?`;
+  }
+  return transferenciaAnalizadaActual;
+}
+
+async function importarTransferenciaDesdeModal() {
+  try {
+    const analizada = transferenciaAnalizadaActual || (await analizarTransferenciaDesdeInput());
+    if (!analizada) return;
+    if (!confirm(`Se han detectado ${analizada.analisis.nuevos} platos nuevos. ¿Deseas añadirlos?`)) return;
+    const resultado = await procesarTransferenciaRecibida(analizada.codigo);
+    notificar(`Importación completada: ${resultado.importados} platos añadidos.`);
+    await cerrarModalEscanerTransferencia();
+  } catch (error) {
+    console.error(error);
+    notificar(error.message || 'No se pudo importar la transferencia.', 'danger');
+  }
+}
+
+// ======================
 // Sección: Lista de compra
 // ======================
+const UNIDADES_ALIAS = {
+  g: 'g',
+  gr: 'g',
+  gramo: 'g',
+  gramos: 'g',
+  kg: 'kg',
+  kilo: 'kg',
+  kilos: 'kg',
+  kilogramo: 'kg',
+  kilogramos: 'kg',
+  ml: 'ml',
+  mililitro: 'ml',
+  mililitros: 'ml',
+  l: 'l',
+  lt: 'l',
+  litro: 'l',
+  litros: 'l',
+  u: 'unidad',
+  ud: 'unidad',
+  uds: 'unidad',
+  unidad: 'unidad',
+  unidades: 'unidad',
+  bote: 'bote',
+  botes: 'bote',
+  pizca: 'pizca',
+  pizcas: 'pizca',
+  lata: 'lata',
+  latas: 'lata',
+  paquete: 'paquete',
+  paquetes: 'paquete',
+  diente: 'diente',
+  dientes: 'diente',
+  cucharada: 'cucharada',
+  cucharadas: 'cucharada',
+  cucharadita: 'cucharadita',
+  cucharaditas: 'cucharadita'
+};
+
+function normalizarComparacionTexto(valor) {
+  return (valor || '')
+    .toString()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function numeroLegible(valor) {
+  const redondeado = Math.round(valor * 100) / 100;
+  return Number.isInteger(redondeado) ? String(redondeado) : redondeado.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function normalizarUnidadCruda(unidad) {
+  const limpia = normalizarComparacionTexto(unidad).replace(/\./g, '');
+  return UNIDADES_ALIAS[limpia] || '';
+}
+
+function obtenerGrupoUnidad(unidadCanonica) {
+  if (unidadCanonica === 'g' || unidadCanonica === 'kg') return 'masa';
+  if (unidadCanonica === 'ml' || unidadCanonica === 'l') return 'volumen';
+  return 'otros';
+}
+
+function convertirABase(cantidad, unidadCanonica) {
+  if (unidadCanonica === 'kg') return { cantidadBase: cantidad * 1000, unidadBase: 'g' };
+  if (unidadCanonica === 'l') return { cantidadBase: cantidad * 1000, unidadBase: 'ml' };
+  return { cantidadBase: cantidad, unidadBase: unidadCanonica };
+}
+
+function extraerIngrediente(ingredienteTexto) {
+  const original = (ingredienteTexto || '').toString().trim();
+  if (!original) return null;
+
+  let trabajo = original.replace(/\s+/g, ' ').trim();
+  let cantidad = 1;
+  let unidadCanonica = 'unidad';
+  let producto = trabajo;
+
+  const numeroYUnidadPegados = trabajo.match(/^(\d+(?:[.,]\d+)?)\s*([a-zA-Záéíóúüñ]+)/);
+  if (numeroYUnidadPegados) {
+    const n = parseFloat(numeroYUnidadPegados[1].replace(',', '.'));
+    cantidad = !Number.isFinite(n) || n <= 0 ? 1 : n;
+    unidadCanonica = normalizarUnidadCruda(numeroYUnidadPegados[2]) || 'unidad';
+    trabajo = trabajo.slice(numeroYUnidadPegados[0].length).trim();
+  } else {
+    const numeroInicial = trabajo.match(/^(\d+(?:[.,]\d+)?)/);
+    if (numeroInicial) {
+      const n = parseFloat(numeroInicial[1].replace(',', '.'));
+      cantidad = !Number.isFinite(n) || n <= 0 ? 1 : n;
+      trabajo = trabajo.slice(numeroInicial[0].length).trim();
+
+      const palabraUnidad = trabajo.match(/^([a-zA-Záéíóúüñ.]+)/);
+      if (palabraUnidad) {
+        const unidadEncontrada = normalizarUnidadCruda(palabraUnidad[1]);
+        if (unidadEncontrada) {
+          unidadCanonica = unidadEncontrada;
+          trabajo = trabajo.slice(palabraUnidad[0].length).trim();
+        }
+      }
+    } else {
+      cantidad = 1;
+      unidadCanonica = 'unidad';
+    }
+  }
+
+  producto = trabajo.replace(/^(de|del|la|el|los|las)\s+/i, '').trim();
+  if (!producto) producto = original;
+
+  const nombreNormalizado = normalizarComparacionTexto(producto);
+  if (!nombreNormalizado) return null;
+
+  const grupoUnidad = obtenerGrupoUnidad(unidadCanonica);
+  const conversion = convertirABase(cantidad, unidadCanonica);
+  const claveUnidad = grupoUnidad === 'otros' ? unidadCanonica : conversion.unidadBase;
+
+  return {
+    cantidad: conversion.cantidadBase,
+    unidad: claveUnidad || 'unidad',
+    productoOriginal: producto,
+    productoNormalizado: nombreNormalizado
+  };
+}
+
+function formatearIngredienteAgrupado(producto, unidadBase, cantidadBase) {
+  let unidadSalida = unidadBase;
+  let cantidadSalida = cantidadBase;
+
+  if (unidadBase === 'g' && cantidadBase >= 1000) {
+    unidadSalida = 'kg';
+    cantidadSalida = cantidadBase / 1000;
+  } else if (unidadBase === 'ml' && cantidadBase >= 1000) {
+    unidadSalida = 'l';
+    cantidadSalida = cantidadBase / 1000;
+  }
+
+  const unidadTexto = unidadSalida === 'unidad'
+    ? (cantidadSalida === 1 ? 'unidad' : 'unidades')
+    : unidadSalida;
+
+  return `${numeroLegible(cantidadSalida)} ${unidadTexto} de ${producto}`.trim();
+}
+
 function generarListaCompraDesdePlanActual() {
   const plan = obtenerPlanActual();
-  const ingredientesAcumulados = {};
+  const ingredientesAcumulados = new Map();
+  const marcasPrevias = new Map();
+
+  (estado.listaCompra.items || []).forEach((item) => {
+    const parsed = extraerIngrediente(item.texto || '');
+    if (!parsed) return;
+    const clave = `${parsed.productoNormalizado}__${parsed.unidad}`;
+    if (item.marcado) marcasPrevias.set(clave, true);
+  });
 
   Object.keys(plan.asignaciones).forEach((clave) => {
     const asignacion = plan.asignaciones[clave];
@@ -893,18 +1499,37 @@ function generarListaCompraDesdePlanActual() {
       const plato = estado.platos.porId[idPlato];
       if (!plato) return;
       (plato.ingredientes || []).forEach((ing) => {
-        const key = normalizarTexto(ing);
-        if (!key) return;
-        if (!ingredientesAcumulados[key]) ingredientesAcumulados[key] = ing.trim();
+        const parsed = extraerIngrediente(ing);
+        if (!parsed) return;
+        const key = `${parsed.productoNormalizado}__${parsed.unidad}`;
+        const previo = ingredientesAcumulados.get(key);
+
+        if (previo) {
+          previo.cantidad += parsed.cantidad;
+        } else {
+          ingredientesAcumulados.set(key, {
+            producto: parsed.productoOriginal,
+            cantidad: parsed.cantidad,
+            unidad: parsed.unidad,
+            productoNormalizado: parsed.productoNormalizado
+          });
+        }
       });
     });
   });
 
-  estado.listaCompra.items = Object.values(ingredientesAcumulados).map((texto) => ({
-    id: crearId(),
-    texto,
-    marcado: false
-  }));
+  const itemsAgrupados = Array.from(ingredientesAcumulados.values())
+    .sort((a, b) => a.productoNormalizado.localeCompare(b.productoNormalizado, 'es'))
+    .map((item) => {
+      const key = `${item.productoNormalizado}__${item.unidad}`;
+      return {
+        id: crearId(),
+        texto: formatearIngredienteAgrupado(item.producto, item.unidad, item.cantidad),
+        marcado: !!marcasPrevias.get(key)
+      };
+    });
+
+  estado.listaCompra.items = itemsAgrupados;
 
   guardarEstado();
   renderListaCompra();
@@ -1008,6 +1633,7 @@ async function limpiarTodo() {
   
   // Limpiar estado en memoria
   estado = crearEstadoInicial();
+  window.estado = estado;
   
   // Limpiar IndexedDB
   await window.db.clear(window.db.STATE_STORE);
@@ -1055,6 +1681,10 @@ function conectarEventos() {
     navegarA('#/lista');
   });
   document.getElementById('btnExportPdf').addEventListener('click', () => {
+    if (typeof window.exportarPlanAPDF === 'function') {
+      window.exportarPlanAPDF();
+      return;
+    }
     if (typeof window.exportarPlanificadorAPdf === 'function') {
       window.exportarPlanificadorAPdf();
     }
@@ -1072,7 +1702,11 @@ function conectarEventos() {
   document.getElementById('btnLimpiarCelda').addEventListener('click', limpiarCeldaSelector);
   document.querySelectorAll('[data-cerrar-modal="1"]').forEach((el) => el.addEventListener('click', cerrarModalSelector));
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') cerrarModalSelector();
+    if (e.key === 'Escape') {
+      cerrarModalSelector();
+      cerrarModalTransferencia();
+      cerrarModalEscanerTransferencia();
+    }
   });
 
   // Mis platos
@@ -1104,6 +1738,33 @@ function conectarEventos() {
   const nombre = document.getElementById('nombrePlato');
   nombre.addEventListener('input', (e) => actualizarSugerenciasPlatos(e.target.value));
   nombre.addEventListener('blur', () => setTimeout(() => document.getElementById('sugerenciasPlatos').classList.add('hidden'), 150));
+  document.getElementById('btnCompartirSeleccionados').addEventListener('click', async () => {
+    const ids = [...platosSeleccionadosParaTransferir];
+    if (!ids.length) return;
+    await abrirModalTransferencia('varios', ids);
+  });
+  document.getElementById('btnTransferirBibliotecaCompleta').addEventListener('click', async () => {
+    await abrirModalTransferencia('todo');
+  });
+  document.querySelectorAll('[data-cerrar-transferencia="1"]').forEach((el) => {
+    el.addEventListener('click', cerrarModalTransferencia);
+  });
+  document.getElementById('btnCopiarCodigoTransferencia').addEventListener('click', copiarCodigoTransferencia);
+
+  document.getElementById('btnAbrirEscanerTransferencia').addEventListener('click', abrirModalEscanerTransferencia);
+  document.querySelectorAll('[data-cerrar-escaner-transferencia="1"]').forEach((el) => {
+    el.addEventListener('click', () => {
+      cerrarModalEscanerTransferencia();
+    });
+  });
+  document.getElementById('btnAnalizarTransferencia').addEventListener('click', async () => {
+    try {
+      await analizarTransferenciaDesdeInput();
+    } catch (error) {
+      notificar(error.message || 'No se pudo analizar el código.', 'danger');
+    }
+  });
+  document.getElementById('btnImportarTransferencia').addEventListener('click', importarTransferenciaDesdeModal);
 
   // Lista
   document.getElementById('btnRegenerarLista').addEventListener('click', generarListaCompraDesdePlanActual);
@@ -1119,6 +1780,21 @@ function renderTodo() {
   renderPlanificador();
   renderListaCompra();
 }
+
+window.estado = estado;
+window.platosOrdenados = platosOrdenados;
+window.obtenerPlanActual = obtenerPlanActual;
+window.obtenerIdsDesdeAsignacion = obtenerIdsDesdeAsignacion;
+window.guardarEstado = guardarEstado;
+window.crearId = crearId;
+window.normalizarTexto = normalizarTexto;
+window.formatearRangoPeriodo = formatearRangoPeriodo;
+window.eliminarPlato = eliminarPlato;
+window.generarListaCompraDesdePlanActual = generarListaCompraDesdePlanActual;
+window.limpiarListaCompra = limpiarListaCompra;
+window.obtenerTextoListaCompra = obtenerTextoListaCompra;
+window.prepararDatosParaTransferencia = prepararDatosParaTransferencia;
+window.procesarTransferenciaRecibida = procesarTransferenciaRecibida;
 
 document.addEventListener('DOMContentLoaded', async () => {
   await cargarEstado();
