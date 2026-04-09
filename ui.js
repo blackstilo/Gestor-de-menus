@@ -974,17 +974,6 @@ export function mostrarModalQR(datos, opciones = {}) {
 }
 
 function conectarEventosTransferenciaUI() {
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('.btn-qr');
-    if (!btn) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const id = btn.getAttribute('data-plato-id');
-    if (id && typeof window.abrirModalTransferencia === 'function') {
-      window.abrirModalTransferencia('uno', [id]);
-    }
-  });
-
   const btnCopiar = document.getElementById('btnCopiarCodigoTransferencia');
   if (btnCopiar && !btnCopiar.dataset.boundUi) {
     btnCopiar.dataset.boundUi = '1';

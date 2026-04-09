@@ -639,11 +639,11 @@ function createPlatoListItem(plato) {
   const btnQr = document.createElement('button');
   btnQr.type = 'button';
   btnQr.className =
-    'btn-qr inline-flex items-center justify-center rounded-full border border-slate-200 text-[11px] px-2 py-1 text-slate-600 hover:border-emerald-300 hover:text-emerald-700 transition';
+    'btn-qr-plato inline-flex items-center justify-center rounded-full border border-slate-200 text-[11px] px-2 py-1 text-slate-600 hover:border-emerald-300 hover:text-emerald-700 transition';
   btnQr.textContent = 'QR';
   btnQr.title = 'Transferir este plato por QR';
   btnQr.setAttribute('aria-label', `Transferir ${plato.nombre} por QR`);
-  btnQr.setAttribute('data-plato-id', plato.id);
+  btnQr.dataset.id = plato.id;
 
   acciones.appendChild(btnEditar);
   acciones.appendChild(btnQr);
@@ -1595,9 +1595,6 @@ function conectarEventos() {
     if (!ids.length) return;
     await abrirModalTransferencia('varios', ids);
   });
-  document.getElementById('btnTransferirBibliotecaCompleta').addEventListener('click', async () => {
-    await abrirModalTransferencia('todo');
-  });
   document.querySelectorAll('[data-cerrar-transferencia="1"]').forEach((el) => {
     el.addEventListener('click', cerrarModalTransferencia);
   });
@@ -1621,6 +1618,35 @@ function conectarEventos() {
   document.getElementById('btnLimpiarLista').addEventListener('click', limpiarListaCompra);
   document.getElementById('btnCompartirWhatsapp').addEventListener('click', compartirWhatsapp);
   document.getElementById('btnCompartirEmail').addEventListener('click', compartirEmail);
+
+  document.body.addEventListener('click', async (e) => {
+    // 1. Botón QR Individual (en tarjetas)
+    const btnQR = e.target.closest('.btn-qr-plato');
+    if (btnQR) {
+      e.preventDefault();
+      const idPlato = btnQR.dataset.id;
+      console.log('Clic detectado en QR para plato:', idPlato);
+      const datos = await window.prepararDatosParaTransferencia('uno', [idPlato]);
+      window.codigoTransferenciaActual = datos;
+      const ta = document.getElementById('transferenciaCodigoTexto');
+      if (ta) ta.value = datos;
+      window.mostrarModalQR(datos);
+      return;
+    }
+
+    // 2. Botón Transferir Biblioteca Completa
+    const btnTransferirTodo = e.target.closest('#btnTransferirTodo');
+    if (btnTransferirTodo) {
+      e.preventDefault();
+      console.log('Clic detectado en Transferir Biblioteca');
+      const datos = await window.prepararDatosParaTransferencia('todo');
+      window.codigoTransferenciaActual = datos;
+      const ta = document.getElementById('transferenciaCodigoTexto');
+      if (ta) ta.value = datos;
+      window.mostrarModalQR(datos);
+      return;
+    }
+  });
 }
 
 function renderTodo() {
