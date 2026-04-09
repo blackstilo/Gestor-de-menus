@@ -1620,6 +1620,9 @@ function conectarEventos() {
   document.getElementById('btnCompartirEmail').addEventListener('click', compartirEmail);
 
   document.body.addEventListener('click', async (e) => {
+    // GUARDIA DE SEGURIDAD CRÍTICA
+    if (!e.target || typeof e.target.closest !== 'function') return;
+
     // 1. Botón QR Individual (en tarjetas)
     const btnQR = e.target.closest('.btn-qr-plato');
     if (btnQR) {
