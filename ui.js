@@ -346,7 +346,7 @@ export function actualizarSugerenciasPlatos(texto) {
   arr.forEach((plato) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'w-full flex items-start gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-primario-50/60';
+    btn.className = 'w-full cursor-pointer flex items-start gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-emerald-50 focus:bg-emerald-50 focus:outline-none transition';
 
     const indicador = document.createElement('span');
     indicador.className = 'mt-0.5 h-1.5 w-1.5 rounded-full bg-primario-500 flex-shrink-0';
@@ -373,6 +373,11 @@ export function actualizarSugerenciasPlatos(texto) {
     });
     contenedor.appendChild(btn);
   });
+
+  const primerResultado = contenedor.querySelector('button');
+  if (primerResultado) {
+    primerResultado.classList.add('bg-emerald-100', 'text-emerald-700');
+  }
 
   contenedor.classList.remove('hidden');
 }
@@ -917,20 +922,28 @@ export function renderTodo() {
  * @param {{ sinFotos?: boolean }} [opciones]
  */
 export function mostrarModalQR(datos, opciones = {}) {
+  const modal = document.getElementById('modalTransferencia');
   const container = document.getElementById('qrcode');
+  if (modal) {
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
   if (!container) return;
   container.innerHTML = '';
   const info = document.getElementById('textoTransferenciaInfo');
   const sinFotos = !!opciones.sinFotos;
 
   if (!datos || datos.length > 2000) {
+    container.innerHTML = '';
+    container.textContent = '';
     if (info) {
-      info.textContent = 'Demasiados datos para QR, usa el botón Copiar Código';
+      info.textContent = "Datos demasiado grandes para QR. Usa el botón 'Copiar Código'";
     }
     return;
   }
 
-  if (typeof QRCode === 'undefined') {
+  if (!window.QRCode) {
+    console.error('QRCode no está disponible en window.QRCode.');
     container.textContent = 'Librería QR no disponible.';
     return;
   }
@@ -941,7 +954,15 @@ export function mostrarModalQR(datos, opciones = {}) {
       : 'Escanea este QR desde otro dispositivo o copia el código.';
   }
 
-  new QRCode(container, { text: datos, width: 256, height: 256 });
+  try {
+    new window.QRCode(container, { text: datos, width: 256, height: 256 });
+  } catch (error) {
+    console.error('Error al generar QR:', error);
+    container.innerHTML = '';
+    if (info) {
+      info.textContent = "Datos demasiado grandes para QR. Usa el botón 'Copiar Código'";
+    }
+  }
 }
 
 function conectarEventosTransferenciaUI() {

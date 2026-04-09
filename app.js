@@ -991,7 +991,7 @@ function limpiarCeldaSelector() {
 // ======================
 // Sección: Transferencia offline (QR/Base64)
 // ======================
-function obtenerPayloadTransferencia(tipo, ids = [], sinFotos = false) {
+function obtenerPayloadTransferencia(tipo, ids = [], sinFotos = true) {
   const payload = {
     tipo: 'transferencia_menus',
     version: 1,
@@ -1006,7 +1006,6 @@ function obtenerPayloadTransferencia(tipo, ids = [], sinFotos = false) {
       .map((id) => estado.platos.porId[id])
       .filter(Boolean)
       .map((plato) => {
-        if (!sinFotos) return plato;
         const clon = { ...plato };
         delete clon.foto;
         return clon;
@@ -1017,7 +1016,6 @@ function obtenerPayloadTransferencia(tipo, ids = [], sinFotos = false) {
 
   if (tipo === 'todo') {
     const platos = platosOrdenados().map((plato) => {
-      if (!sinFotos) return plato;
       const clon = { ...plato };
       delete clon.foto;
       return clon;
@@ -1076,9 +1074,9 @@ async function desempaquetarCadenaTransferencia(cadenaBase64) {
 }
 
 async function prepararPaqueteTransferencia(tipo, ids = []) {
-  const payloadCompleto = obtenerPayloadTransferencia(tipo, ids, false);
+  const payloadCompleto = obtenerPayloadTransferencia(tipo, ids, true);
   let cadena = await empaquetarPayloadTransferencia(payloadCompleto);
-  let sinFotos = false;
+  let sinFotos = true;
 
   if (cadena.length > 2500) {
     const payloadLigero = obtenerPayloadTransferencia(tipo, ids, true);
