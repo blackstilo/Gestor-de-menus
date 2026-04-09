@@ -644,6 +644,25 @@ function createPlatoListItem(plato) {
   btnQr.title = 'Transferir este plato por QR';
   btnQr.setAttribute('aria-label', `Transferir ${plato.nombre} por QR`);
   btnQr.dataset.id = plato.id;
+  btnQr.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation(); // Evitar que el clic abra la edición del plato
+    console.log('Paso 1: Clic en botón QR del plato', plato.id);
+    try {
+      const datos = await window.prepararDatosParaTransferencia('uno', [plato.id]);
+      console.log('Paso 2: Datos preparados', datos ? 'OK' : 'VACÍO');
+      if (window.mostrarModalQR) {
+        window.codigoTransferenciaActual = datos;
+        const ta = document.getElementById('transferenciaCodigoTexto');
+        if (ta) ta.value = datos;
+        window.mostrarModalQR(datos);
+      } else {
+        console.error('Error: window.mostrarModalQR no existe');
+      }
+    } catch (error) {
+      console.error('Error en Paso 1/2:', error);
+    }
+  });
 
   acciones.appendChild(btnEditar);
   acciones.appendChild(btnQr);
@@ -1641,12 +1660,22 @@ function conectarEventos() {
     const btnTransferirTodo = e.target.closest('#btnTransferirTodo');
     if (btnTransferirTodo) {
       e.preventDefault();
-      console.log('Clic detectado en Transferir Biblioteca');
-      const datos = await window.prepararDatosParaTransferencia('todo');
-      window.codigoTransferenciaActual = datos;
-      const ta = document.getElementById('transferenciaCodigoTexto');
-      if (ta) ta.value = datos;
-      window.mostrarModalQR(datos);
+      e.stopPropagation();
+      console.log('Paso 1: Clic en Transferir Biblioteca');
+      try {
+        const datos = await window.prepararDatosParaTransferencia('todo');
+        console.log('Paso 2: Datos de biblioteca preparados', datos ? 'OK' : 'VACÍO');
+        if (window.mostrarModalQR) {
+          window.codigoTransferenciaActual = datos;
+          const ta = document.getElementById('transferenciaCodigoTexto');
+          if (ta) ta.value = datos;
+          window.mostrarModalQR(datos);
+        } else {
+          console.error('Error: window.mostrarModalQR no existe');
+        }
+      } catch (error) {
+        console.error('Error en Transferir Biblioteca (Paso 1/2):', error);
+      }
       return;
     }
   });
