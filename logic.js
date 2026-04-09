@@ -94,8 +94,36 @@ export function obtenerTextoListaCompra() {
   return proxyCall('obtenerTextoListaCompra');
 }
 
-export function prepararDatosParaTransferencia(tipo, ids = []) {
-  return proxyCall('prepararDatosParaTransferencia', tipo, ids);
+function serializarBase64Seguro(data) {
+  const texto = JSON.stringify(data);
+  const bytes = new TextEncoder().encode(texto);
+  let binario = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    const bloque = bytes.subarray(i, i + chunk);
+    binario += String.fromCharCode(...bloque);
+  }
+  return btoa(binario);
+}
+
+export async function prepararDatosParaTransferencia(tipo, ids = []) {
+  const resultado = await proxyCall('prepararDatosParaTransferencia', tipo, ids);
+  if (typeof resultado === 'string') {
+    return resultado;
+  }
+  // Fallback defensivo: si el runtime devolviera payload objeto, eliminamos fotos antes de serializar.
+  if (resultado && typeof resultado === 'object') {
+    const copia = JSON.parse(JSON.stringify(resultado));
+    if (Array.isArray(copia.platos)) {
+      copia.platos.forEach((plato) => {
+        if (plato && typeof plato === 'object' && 'foto' in plato) {
+          delete plato.foto;
+        }
+      });
+    }
+    return serializarBase64Seguro(copia);
+  }
+  return '';
 }
 
 export function procesarTransferenciaRecibida(cadenaBase64) {

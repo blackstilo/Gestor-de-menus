@@ -743,6 +743,11 @@ function createPlannerCell(diaClave, momentoClave, indiceDia, plan) {
     .map((id) => estado.platos.porId[id])
     .filter(Boolean);
 
+  if (platosAsignados.length > 0) {
+    cont.className =
+      'w-full rounded-2xl border border-emerald-400 bg-emerald-50 px-2.5 py-2.5 sm:px-3 sm:py-3 transition min-h-[72px] flex flex-col gap-1.5 relative text-emerald-900 shadow-sm';
+  }
+
   const cabecera = document.createElement('div');
   cabecera.className = 'flex items-center justify-between gap-2';
   cabecera.innerHTML = `
@@ -942,9 +947,9 @@ function marcarSeleccionVisual(btnSeleccionado) {
   // Muy simple: resaltamos el botón seleccionado y limpiamos el resto.
   const contenedor = document.getElementById('selectorResultados');
   contenedor.querySelectorAll('button').forEach((b) => {
-    b.classList.remove('ring-2', 'ring-primario-500/40');
+    b.classList.remove('ring-2', 'ring-primario-500/40', 'bg-emerald-100', 'text-emerald-700');
   });
-  btnSeleccionado.classList.add('ring-2', 'ring-primario-500/40');
+  btnSeleccionado.classList.add('ring-2', 'ring-primario-500/40', 'bg-emerald-100', 'text-emerald-700');
 }
 
 function confirmarSelector() {

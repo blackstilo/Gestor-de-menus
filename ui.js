@@ -719,7 +719,7 @@ export function renderResultadosSelector(texto) {
   if (itemCrear) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-acento-50/60 transition border-b border-slate-100';
+    btn.className = 'w-full cursor-pointer flex items-center gap-3 px-3 py-2.5 text-left hover:bg-acento-50/60 focus:bg-acento-50/60 focus:outline-none transition border-b border-slate-100';
 
     const icono = document.createElement('span');
     icono.className = 'h-8 w-8 rounded-2xl bg-acento-50 border border-acento-100 flex items-center justify-center font-bold text-acento-500';
@@ -758,7 +758,7 @@ export function renderResultadosSelector(texto) {
   filtrados.forEach((plato) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-primario-50/60 transition border-b border-slate-100 last:border-b-0';
+    btn.className = 'w-full cursor-pointer flex items-center gap-3 px-3 py-2.5 text-left hover:bg-primario-50/60 focus:bg-primario-50/60 focus:outline-none transition border-b border-slate-100 last:border-b-0';
 
     if (plato.foto && plato.foto.dataUrl) {
       const img = document.createElement('img');
@@ -798,9 +798,9 @@ export function renderResultadosSelector(texto) {
 function marcarSeleccionVisual(btnSeleccionado) {
   const contenedor = document.getElementById('selectorResultados');
   contenedor.querySelectorAll('button').forEach((b) => {
-    b.classList.remove('ring-2', 'ring-primario-500/40');
+    b.classList.remove('ring-2', 'ring-primario-500/40', 'bg-emerald-100', 'text-emerald-700');
   });
-  btnSeleccionado.classList.add('ring-2', 'ring-primario-500/40');
+  btnSeleccionado.classList.add('ring-2', 'ring-primario-500/40', 'bg-emerald-100', 'text-emerald-700');
 }
 
 export function confirmarSelector() {
@@ -955,30 +955,35 @@ export function mostrarModalQR(datos, opciones = {}) {
   }
 
   try {
-    new window.QRCode(container, { text: datos, width: 256, height: 256 });
+    console.log('Generando QR con:', datos);
+    setTimeout(() => {
+      try {
+        new window.QRCode(container, { text: datos, width: 220, height: 220 });
+      } catch (error) {
+        console.error('Error al generar QR:', error);
+        container.innerHTML = '';
+        if (info) {
+          info.textContent = "Datos demasiado grandes para QR. Usa el botón 'Copiar Código'";
+        }
+      }
+    }, 50);
   } catch (error) {
-    console.error('Error al generar QR:', error);
+    console.error('Error al preparar QR:', error);
     container.innerHTML = '';
-    if (info) {
-      info.textContent = "Datos demasiado grandes para QR. Usa el botón 'Copiar Código'";
-    }
   }
 }
 
 function conectarEventosTransferenciaUI() {
-  const lista = document.getElementById('listaPlatosGuardados');
-  if (lista) {
-    lista.addEventListener('click', (e) => {
-      const btn = e.target.closest('.btn-qr');
-      if (!btn) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const id = btn.getAttribute('data-plato-id');
-      if (id && typeof window.abrirModalTransferencia === 'function') {
-        window.abrirModalTransferencia('uno', [id]);
-      }
-    });
-  }
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-qr');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = btn.getAttribute('data-plato-id');
+    if (id && typeof window.abrirModalTransferencia === 'function') {
+      window.abrirModalTransferencia('uno', [id]);
+    }
+  });
 
   const btnCopiar = document.getElementById('btnCopiarCodigoTransferencia');
   if (btnCopiar && !btnCopiar.dataset.boundUi) {
