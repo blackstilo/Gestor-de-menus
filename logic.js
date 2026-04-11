@@ -1,4 +1,4 @@
-import { initDB, get, set, clear, STATE_STORE, IMAGES_STORE } from './db.js';
+import { initDB, set, STATE_STORE, IMAGES_STORE } from './db.js';
 
 export const STORAGE_V2 = 'gestorMenus_v2_state';
 export const STORAGE_V1 = {
@@ -94,40 +94,92 @@ export function obtenerTextoListaCompra() {
   return proxyCall('obtenerTextoListaCompra');
 }
 
-function serializarBase64Seguro(data) {
-  const texto = JSON.stringify(data);
-  const bytes = new TextEncoder().encode(texto);
-  let binario = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    const bloque = bytes.subarray(i, i + chunk);
-    binario += String.fromCharCode(...bloque);
-  }
-  return btoa(binario);
+function idsDesdeCeldaPlan(asignacion) {
+  if (!asignacion) return [];
+  if (Array.isArray(asignacion.platos)) return asignacion.platos.filter(Boolean);
+  if (asignacion.idPlato) return [asignacion.idPlato];
+  return [];
 }
 
-export async function prepararDatosParaTransferencia(tipo, ids = []) {
-  const resultado = await proxyCall('prepararDatosParaTransferencia', tipo, ids);
-  if (typeof resultado === 'string') {
-    return resultado;
-  }
-  // Fallback defensivo: si el runtime devolviera payload objeto, eliminamos fotos antes de serializar.
-  if (resultado && typeof resultado === 'object') {
-    const copia = JSON.parse(JSON.stringify(resultado));
-    if (Array.isArray(copia.platos)) {
-      copia.platos.forEach((plato) => {
-        if (plato && typeof plato === 'object' && 'foto' in plato) {
-          delete plato.foto;
-        }
-      });
+function extraerEstadoDePayloadBackup(data) {
+  if (!data || typeof data !== 'object') return null;
+  if (data.estado && data.estado.platos && data.estado.platos.porId) return data.estado;
+  if (data.platos && data.platos.porId) return data;
+  return null;
+}
+
+function fusionarEstadoConBackup(actual, backupEstado) {
+  if (!backupEstado || !backupEstado.platos || !backupEstado.platos.porId) return;
+
+  const porId = { ...actual.platos.porId };
+  const ordenActual = [...(actual.platos.orden || [])];
+  const ordenBackup = Array.isArray(backupEstado.platos.orden) ? backupEstado.platos.orden : [];
+
+  Object.keys(backupEstado.platos.porId).forEach((id) => {
+    const p = backupEstado.platos.porId[id];
+    if (p && typeof p === 'object') {
+      porId[id] = JSON.parse(JSON.stringify(p));
     }
-    return serializarBase64Seguro(copia);
+  });
+
+  const nuevoOrden = [];
+  ordenBackup.forEach((id) => {
+    if (porId[id] && !nuevoOrden.includes(id)) nuevoOrden.push(id);
+  });
+  ordenActual.forEach((id) => {
+    if (porId[id] && !nuevoOrden.includes(id)) nuevoOrden.push(id);
+  });
+  Object.keys(porId).forEach((id) => {
+    if (!nuevoOrden.includes(id)) nuevoOrden.push(id);
+  });
+
+  actual.platos.porId = porId;
+  actual.platos.orden = nuevoOrden;
+
+  if (backupEstado.planes && typeof backupEstado.planes === 'object') {
+    if (!actual.planes) actual.planes = {};
+    Object.keys(backupEstado.planes).forEach((clavePeriodo) => {
+      const planB = backupEstado.planes[clavePeriodo];
+      if (!planB || !planB.asignaciones) return;
+      if (!actual.planes[clavePeriodo]) actual.planes[clavePeriodo] = { asignaciones: {} };
+      const dest = actual.planes[clavePeriodo].asignaciones;
+      Object.keys(planB.asignaciones).forEach((cellKey) => {
+        const a = idsDesdeCeldaPlan(dest[cellKey]);
+        const b = idsDesdeCeldaPlan(planB.asignaciones[cellKey]);
+        const union = [...new Set([...a, ...b].filter(Boolean))];
+        if (union.length) dest[cellKey] = { platos: union };
+      });
+    });
   }
-  return '';
+
+  if (!actual.listaCompra) actual.listaCompra = { items: [] };
+  if (!Array.isArray(actual.listaCompra.items)) actual.listaCompra.items = [];
+  const vistos = new Set(
+    actual.listaCompra.items.map((it) => (it.texto || '').trim().toLowerCase()).filter(Boolean)
+  );
+  (backupEstado.listaCompra?.items || []).forEach((item) => {
+    const t = (item.texto || '').trim();
+    if (!t) return;
+    const k = t.toLowerCase();
+    if (vistos.has(k)) return;
+    vistos.add(k);
+    actual.listaCompra.items.push({
+      id: proxyCall('crearId'),
+      texto: t,
+      marcado: !!item.marcado
+    });
+  });
 }
 
-export function procesarTransferenciaRecibida(cadenaBase64) {
-  return proxyCall('procesarTransferenciaRecibida', cadenaBase64);
+function descargarArchivoFile(file) {
+  const url = URL.createObjectURL(file);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = file.name;
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  URL.revokeObjectURL(url);
 }
 
 // --- Ingredientes: parseo y lista de la compra (lógica pura, sin depender del estado) ---
@@ -425,10 +477,95 @@ export function descargarJson(data, nombre) {
   URL.revokeObjectURL(url);
 }
 
-export async function exportarBackup() {
+export async function generarArchivoBackup() {
+  const payload = await crearBackupJson();
+  const fecha = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const nombre = `menus_backup_${fecha}.json`;
+  return new File([JSON.stringify(payload, null, 2)], nombre, { type: 'application/json' });
+}
+
+export async function descargarCopiaSeguridad() {
   mostrarToastMensaje('Generando copia de seguridad...');
-  const backup = await crearBackupJson();
-  descargarJson(backup, 'backup_menus_saludables.json');
+  const file = await generarArchivoBackup();
+  descargarArchivoFile(file);
+}
+
+export async function compartirCopiaSeguridad() {
+  const file = await generarArchivoBackup();
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: 'Copia de Seguridad de Menús',
+        text: 'Aquí tienes la copia de seguridad de mis menús saludables.'
+      });
+      return;
+    } catch (error) {
+      if (error && error.name === 'AbortError') return;
+      console.warn('navigator.share falló.', error);
+    }
+  }
+  mostrarToastMensaje(
+    'La función de compartir nativa no está disponible en este navegador. El archivo se descargará en su lugar',
+    'warning'
+  );
+  descargarArchivoFile(file);
+}
+
+export async function importarCopiaSeguridad(file) {
+  if (!file) return;
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch {
+    mostrarToastMensaje('El archivo no es un JSON válido.', 'danger');
+    return;
+  }
+
+  const estadoBackup = extraerEstadoDePayloadBackup(data);
+  if (!estadoBackup) {
+    mostrarToastMensaje('No es una copia de seguridad reconocible.', 'danger');
+    return;
+  }
+
+  if (
+    !window.confirm(
+      '¿Fusionar esta copia con tus datos actuales? Se integrarán platos, planes e ítems de lista sin borrar por completo lo que ya tienes.'
+    )
+  ) {
+    return;
+  }
+
+  if (!window.estado) {
+    mostrarToastMensaje('La aplicación no está lista. Recarga la página e inténtalo de nuevo.', 'danger');
+    return;
+  }
+
+  fusionarEstadoConBackup(window.estado, estadoBackup);
+
+  if (Array.isArray(data.images)) {
+    for (const item of data.images) {
+      if (!item || item.key === undefined) continue;
+      let value = item.value;
+      if (typeof value === 'string' && value.startsWith('data:')) {
+        value = dataURLToBlob(value);
+      }
+      await set(IMAGES_STORE, item.key, value);
+    }
+  }
+
+  if (typeof window.guardarEstado === 'function') {
+    await window.guardarEstado();
+  } else {
+    await set(STATE_STORE, 'appState', window.estado);
+  }
+
+  mostrarToastMensaje('Copia importada. Recargando…');
+  window.location.reload();
+}
+
+export async function exportarBackup() {
+  return descargarCopiaSeguridad();
 }
 
 export async function compartirPlato(plato) {
@@ -471,7 +608,7 @@ export async function importarBackupOPlato(archivo) {
     const data = await leerArchivoJson(archivo);
 
     if (data && (data.tipo === 'backup' || data.estado)) {
-      await importarBackup(data);
+      await importarCopiaSeguridad(archivo);
       return;
     }
 
@@ -485,38 +622,6 @@ export async function importarBackupOPlato(archivo) {
     console.error(error);
     mostrarToastMensaje('No se pudo importar el archivo. Asegúrate de que sea un JSON válido.', 'danger');
   }
-}
-
-async function importarBackup(payload) {
-  if (!window.confirm('Importar esta copia de seguridad reemplazará los datos actuales. ¿Continuar?')) {
-    return;
-  }
-
-  if (!payload || !payload.estado) {
-    throw new Error('Archivo de copia de seguridad inválido.');
-  }
-
-  window.estado = payload.estado;
-  await set(STATE_STORE, 'appState', payload.estado);
-
-  if (Array.isArray(payload.images)) {
-    await clear(IMAGES_STORE);
-    for (const item of payload.images) {
-      if (!item || item.key === undefined) continue;
-      let value = item.value;
-      if (typeof value === 'string' && value.startsWith('data:')) {
-        value = dataURLToBlob(value);
-      }
-      await set(IMAGES_STORE, item.key, value);
-    }
-  }
-
-  if (typeof window.guardarEstado === 'function') {
-    await window.guardarEstado();
-  }
-
-  mostrarToastMensaje('Copia de seguridad restaurada.');
-  window.location.reload();
 }
 
 async function importarPlato(data) {
@@ -558,5 +663,8 @@ async function importarPlato(data) {
 }
 
 window.exportarBackup = exportarBackup;
+window.descargarCopiaSeguridad = descargarCopiaSeguridad;
+window.compartirCopiaSeguridad = compartirCopiaSeguridad;
+window.importarCopiaSeguridad = importarCopiaSeguridad;
 window.importarBackupOPlato = importarBackupOPlato;
 window.compartirPlato = compartirPlato;

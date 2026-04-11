@@ -1,4 +1,8 @@
-import { mostrarModalQR } from './ui.js';
+import {
+  descargarCopiaSeguridad,
+  compartirCopiaSeguridad,
+  importarCopiaSeguridad
+} from './logic.js';
 
 /* Gestor de Menús Saludables
    Web App local (SPA) con LocalStorage.
@@ -209,67 +213,12 @@ function normalizarTexto(s) {
   return (s || '').trim().toLowerCase();
 }
 
-function normalizarNombreComparacion(s) {
-  return (s || '')
-    .toString()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .toLowerCase();
-}
-
 function notificar(mensaje, tipo = 'success') {
   if (typeof window.mostrarToast === 'function') {
     window.mostrarToast(mensaje, tipo);
     return;
   }
   alert(mensaje);
-}
-
-function bytesABase64(bytes) {
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
-}
-
-function base64ABytes(base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-async function comprimirTexto(texto) {
-  if (typeof CompressionStream === 'undefined') {
-    return { bytes: new TextEncoder().encode(texto), comprimido: false };
-  }
-  const cs = new CompressionStream('gzip');
-  const writer = cs.writable.getWriter();
-  await writer.write(new TextEncoder().encode(texto));
-  await writer.close();
-  const buffer = await new Response(cs.readable).arrayBuffer();
-  return { bytes: new Uint8Array(buffer), comprimido: true };
-}
-
-async function descomprimirTexto(bytes, comprimido) {
-  if (!comprimido) {
-    return new TextDecoder().decode(bytes);
-  }
-  if (typeof DecompressionStream === 'undefined') {
-    throw new Error('Este dispositivo no soporta descompresión gzip.');
-  }
-  const ds = new DecompressionStream('gzip');
-  const writer = ds.writable.getWriter();
-  await writer.write(bytes);
-  await writer.close();
-  const buffer = await new Response(ds.readable).arrayBuffer();
-  return new TextDecoder().decode(buffer);
 }
 
 function obtenerLunesDeEstaSemana(fecha = new Date()) {
@@ -374,11 +323,6 @@ async function optimizarImagenArchivo(archivo, maxAncho = 500, calidad = 0.72) {
 let ingredientesTemporales = [];
 let fotoOptimizadaActual = null;
 let platoEnEdicionId = null;
-let platosSeleccionadosParaTransferir = new Set();
-let codigoTransferenciaActual = '';
-let html5QrReader = null;
-let transferenciaAnalizadaActual = null;
-
 function platosOrdenados() {
   return estado.platos.orden
     .map((id) => estado.platos.porId[id])
@@ -552,7 +496,6 @@ function guardarPlatoDesdeFormulario(evento) {
 
 function eliminarPlato(id) {
   if (!confirm('¿Seguro que quieres eliminar este plato? Se quitará también del planificador.')) return;
-  platosSeleccionadosParaTransferir.delete(id);
   delete estado.platos.porId[id];
   estado.platos.orden = estado.platos.orden.filter((x) => x !== id);
 
@@ -573,25 +516,11 @@ function eliminarPlato(id) {
   guardarEstado();
   renderPlatos();
   renderPlanificador();
-  actualizarBotonCompartirSeleccionados();
 }
 
 function createPlatoListItem(plato) {
   const li = document.createElement('li');
   li.className = 'group rounded-2xl bg-white border border-slate-200 hover:border-primario-500/60 hover:bg-primario-50/40 px-3 py-3 flex gap-3 items-center transition';
-
-  const selector = document.createElement('input');
-  selector.type = 'checkbox';
-  selector.className = 'h-4 w-4 rounded border-slate-300 text-emerald-600';
-  selector.checked = platosSeleccionadosParaTransferir.has(plato.id);
-  selector.title = 'Seleccionar para compartir';
-  selector.setAttribute('aria-label', `Seleccionar ${plato.nombre} para compartir`);
-  selector.addEventListener('click', (e) => e.stopPropagation());
-  selector.addEventListener('change', () => {
-    if (selector.checked) platosSeleccionadosParaTransferir.add(plato.id);
-    else platosSeleccionadosParaTransferir.delete(plato.id);
-    actualizarBotonCompartirSeleccionados();
-  });
 
   const mini = document.createElement('div');
   mini.className = 'h-12 w-12 rounded-2xl bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center text-[10px] text-slate-400 border border-slate-200';
@@ -638,48 +567,14 @@ function createPlatoListItem(plato) {
     }
   });
 
-  const btnQr = document.createElement('button');
-  btnQr.type = 'button';
-  btnQr.className =
-    'btn-qr-plato inline-flex items-center justify-center rounded-full border border-slate-200 text-[11px] px-2 py-1 text-slate-600 hover:border-emerald-300 hover:text-emerald-700 transition';
-  btnQr.textContent = 'QR';
-  btnQr.title = 'Transferir este plato por QR';
-  btnQr.setAttribute('aria-label', `Transferir ${plato.nombre} por QR`);
-  btnQr.dataset.id = plato.id;
-  btnQr.addEventListener('click', async (e) => {
-    e.preventDefault();
-    e.stopPropagation(); // Evitar que el clic abra la edición del plato
-    console.log('Paso 1: Clic en botón QR del plato', plato.id);
-    try {
-      const datos = await window.prepararDatosParaTransferencia('uno', [plato.id]);
-      console.log('Paso 2: Datos preparados', datos ? 'OK' : 'VACÍO');
-      window.codigoTransferenciaActual = datos;
-      const ta = document.getElementById('transferenciaCodigoTexto');
-      if (ta) ta.value = datos;
-      mostrarModalQR(datos);
-    } catch (error) {
-      console.error('Error en Paso 1/2:', error);
-    }
-  });
-
   acciones.appendChild(btnEditar);
-  acciones.appendChild(btnQr);
   acciones.appendChild(btnCompartir);
   acciones.appendChild(btnEliminar);
 
-  li.appendChild(selector);
   li.appendChild(mini);
   li.appendChild(contenido);
   li.appendChild(acciones);
   return li;
-}
-
-function actualizarBotonCompartirSeleccionados() {
-  const btn = document.getElementById('btnCompartirSeleccionados');
-  if (!btn) return;
-  const total = platosSeleccionadosParaTransferir.size;
-  btn.textContent = `Compartir seleccionados (${total})`;
-  btn.classList.toggle('hidden', total === 0);
 }
 
 function renderPlatos() {
@@ -694,7 +589,6 @@ function renderPlatos() {
   if (arr.length === 0) {
     vacio.classList.remove('hidden');
     lista.classList.add('hidden');
-    actualizarBotonCompartirSeleccionados();
     return;
   }
   
@@ -704,7 +598,6 @@ function renderPlatos() {
   arr.forEach((plato) => {
     lista.appendChild(createPlatoListItem(plato));
   });
-  actualizarBotonCompartirSeleccionados();
 }
 
 // Autocompletado (Mis Platos)
@@ -1011,320 +904,6 @@ function limpiarCeldaSelector() {
 }
 
 // ======================
-// Sección: Transferencia offline (QR/Base64)
-// ======================
-function obtenerPayloadTransferencia(tipo, ids = [], sinFotos = true) {
-  const payload = {
-    tipo: 'transferencia_menus',
-    version: 1,
-    modo: tipo,
-    creadoEn: new Date().toISOString(),
-    periodo: estado.periodo
-  };
-
-  if (tipo === 'uno' || tipo === 'varios') {
-    const unicos = [...new Set(ids)].filter(Boolean);
-    const platos = unicos
-      .map((id) => estado.platos.porId[id])
-      .filter(Boolean)
-      .map((plato) => {
-        const clon = { ...plato };
-        delete clon.foto;
-        return clon;
-      });
-    payload.platos = platos;
-    return payload;
-  }
-
-  if (tipo === 'todo') {
-    const platos = platosOrdenados().map((plato) => {
-      const clon = { ...plato };
-      delete clon.foto;
-      return clon;
-    });
-    payload.platos = platos;
-    payload.planActual = obtenerPlanActual();
-    return payload;
-  }
-
-  throw new Error('Tipo de transferencia no válido.');
-}
-
-async function empaquetarPayloadTransferencia(payload) {
-  const json = JSON.stringify(payload);
-  const compactado = await comprimirTexto(json);
-  const sobre = {
-    version: 1,
-    encoding: compactado.comprimido ? 'gzip+base64' : 'plain+base64',
-    payload: bytesABase64(compactado.bytes)
-  };
-  return bytesABase64(new TextEncoder().encode(JSON.stringify(sobre)));
-}
-
-async function desempaquetarCadenaTransferencia(cadenaBase64) {
-  if (!cadenaBase64 || typeof cadenaBase64 !== 'string') {
-    throw new Error('Cadena de transferencia vacía.');
-  }
-
-  let sobre;
-  try {
-    const sobreTexto = new TextDecoder().decode(base64ABytes(cadenaBase64.trim()));
-    sobre = JSON.parse(sobreTexto);
-  } catch {
-    throw new Error('El código no tiene un formato válido.');
-  }
-
-  if (!sobre || !sobre.payload || !sobre.encoding) {
-    throw new Error('Código de transferencia incompleto.');
-  }
-
-  const bytes = base64ABytes(sobre.payload);
-  const comprimido = sobre.encoding === 'gzip+base64';
-  const json = await descomprimirTexto(bytes, comprimido);
-
-  let data;
-  try {
-    data = JSON.parse(json);
-  } catch {
-    throw new Error('No se pudo interpretar la carga de transferencia.');
-  }
-
-  if (!data || data.tipo !== 'transferencia_menus' || !Array.isArray(data.platos)) {
-    throw new Error('El contenido no corresponde a una transferencia válida.');
-  }
-  return data;
-}
-
-async function prepararPaqueteTransferencia(tipo, ids = []) {
-  const payloadCompleto = obtenerPayloadTransferencia(tipo, ids, true);
-  let cadena = await empaquetarPayloadTransferencia(payloadCompleto);
-  let sinFotos = true;
-
-  if (cadena.length > 2500) {
-    const payloadLigero = obtenerPayloadTransferencia(tipo, ids, true);
-    cadena = await empaquetarPayloadTransferencia(payloadLigero);
-    sinFotos = true;
-  }
-
-  return {
-    cadenaBase64: cadena,
-    sinFotos,
-    longitud: cadena.length,
-    modo: tipo
-  };
-}
-
-async function prepararDatosParaTransferencia(tipo, ids = []) {
-  const paquete = await prepararPaqueteTransferencia(tipo, ids);
-  return paquete.cadenaBase64;
-}
-
-function analizarTransferencia(data) {
-  const idsExistentes = new Set(Object.keys(estado.platos.porId || {}));
-  const nombresExistentes = new Set(
-    platosOrdenados().map((p) => normalizarNombreComparacion(p.nombre))
-  );
-  let nuevos = 0;
-  let duplicados = 0;
-
-  (data.platos || []).forEach((plato) => {
-    const nombreNorm = normalizarNombreComparacion(plato.nombre);
-    if (!plato || (!plato.id && !plato.nombre)) return;
-    if ((plato.id && idsExistentes.has(plato.id)) || (nombreNorm && nombresExistentes.has(nombreNorm))) {
-      duplicados += 1;
-    } else {
-      nuevos += 1;
-    }
-  });
-
-  return {
-    total: (data.platos || []).length,
-    nuevos,
-    duplicados
-  };
-}
-
-async function procesarTransferenciaRecibida(cadenaBase64) {
-  const data = await desempaquetarCadenaTransferencia(cadenaBase64);
-  const idsExistentes = new Set(Object.keys(estado.platos.porId || {}));
-  const nombreAId = new Map(
-    platosOrdenados().map((p) => [normalizarNombreComparacion(p.nombre), p.id])
-  );
-  const mapaIdImportadoANuevo = new Map();
-  let incorporados = 0;
-
-  (data.platos || []).forEach((platoEntrada) => {
-    if (!platoEntrada || !platoEntrada.nombre) return;
-    const nombreNorm = normalizarNombreComparacion(platoEntrada.nombre);
-
-    if (platoEntrada.id && idsExistentes.has(platoEntrada.id)) {
-      mapaIdImportadoANuevo.set(platoEntrada.id, platoEntrada.id);
-      return;
-    }
-    if (nombreAId.has(nombreNorm)) {
-      mapaIdImportadoANuevo.set(platoEntrada.id, nombreAId.get(nombreNorm));
-      return;
-    }
-
-    const idFinal = platoEntrada.id && !idsExistentes.has(platoEntrada.id)
-      ? platoEntrada.id
-      : crearId();
-    const nuevo = {
-      id: idFinal,
-      nombre: platoEntrada.nombre,
-      ingredientes: Array.isArray(platoEntrada.ingredientes) ? [...platoEntrada.ingredientes] : [],
-      foto: platoEntrada.foto && platoEntrada.foto.dataUrl ? { ...platoEntrada.foto } : null,
-      actualizadoEn: Date.now()
-    };
-    estado.platos.porId[idFinal] = nuevo;
-    estado.platos.orden.unshift(idFinal);
-    idsExistentes.add(idFinal);
-    nombreAId.set(nombreNorm, idFinal);
-    if (platoEntrada.id) mapaIdImportadoANuevo.set(platoEntrada.id, idFinal);
-    incorporados += 1;
-  });
-
-  if (data.modo === 'todo' && data.planActual && data.planActual.asignaciones) {
-    const claveDestino = clavePeriodoActual();
-    if (!estado.planes[claveDestino]) estado.planes[claveDestino] = { asignaciones: {} };
-    const destino = estado.planes[claveDestino].asignaciones;
-
-    Object.keys(data.planActual.asignaciones).forEach((clave) => {
-      const ids = obtenerIdsDesdeAsignacion(data.planActual.asignaciones[clave]);
-      const mapeados = ids
-        .map((id) => mapaIdImportadoANuevo.get(id) || (estado.platos.porId[id] ? id : null))
-        .filter(Boolean);
-      if (!mapeados.length) return;
-      const existentes = obtenerIdsDesdeAsignacion(destino[clave]);
-      const fusionados = [...new Set([...existentes, ...mapeados])];
-      destino[clave] = { platos: fusionados };
-    });
-  }
-
-  await guardarEstado();
-  renderPlatos();
-  renderPlanificador();
-  return { importados: incorporados, totalRecibidos: (data.platos || []).length };
-}
-
-async function abrirModalTransferencia(tipo, ids = []) {
-  try {
-    const data = await prepararPaqueteTransferencia(tipo, ids);
-    codigoTransferenciaActual = data.cadenaBase64;
-    window.codigoTransferenciaActual = data.cadenaBase64;
-    const modal = document.getElementById('modalTransferencia');
-    const texto = document.getElementById('transferenciaCodigoTexto');
-    if (!modal || !texto) return;
-
-    texto.value = data.cadenaBase64;
-    mostrarModalQR(data.cadenaBase64);
-    modal.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
-
-    if (data.sinFotos) {
-      notificar('Transferencia ligera: se excluyeron imágenes por tamaño.', 'warning');
-    }
-  } catch (error) {
-    console.error(error);
-    notificar(error.message || 'No se pudo generar la transferencia.', 'danger');
-  }
-}
-
-function cerrarModalTransferencia() {
-  const modal = document.getElementById('modalTransferencia');
-  if (!modal) return;
-  modal.classList.add('hidden');
-  document.body.style.overflow = '';
-}
-
-async function iniciarEscanerTransferencia() {
-  if (typeof Html5Qrcode !== 'function') return;
-  if (html5QrReader) return;
-  html5QrReader = new Html5Qrcode('visorEscanerTransferencia');
-  try {
-    await html5QrReader.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 220, height: 220 } },
-      (decodedText) => {
-        const input = document.getElementById('codigoManualTransferencia');
-        if (input && !input.value) {
-          input.value = decodedText;
-        }
-      },
-      () => {}
-    );
-  } catch {
-    notificar('No se pudo iniciar la cámara. Usa pegar código manual.', 'warning');
-  }
-}
-
-async function detenerEscanerTransferencia() {
-  if (!html5QrReader) return;
-  try {
-    if (html5QrReader.isScanning) {
-      await html5QrReader.stop();
-    }
-    await html5QrReader.clear();
-  } catch {
-    // noop
-  } finally {
-    html5QrReader = null;
-  }
-}
-
-async function abrirModalEscanerTransferencia() {
-  const modal = document.getElementById('modalEscanerTransferencia');
-  if (!modal) return;
-  transferenciaAnalizadaActual = null;
-  const resumen = document.getElementById('resumenTransferenciaRecibida');
-  if (resumen) resumen.textContent = '';
-  modal.classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
-  await iniciarEscanerTransferencia();
-}
-
-async function cerrarModalEscanerTransferencia() {
-  const modal = document.getElementById('modalEscanerTransferencia');
-  if (!modal) return;
-  modal.classList.add('hidden');
-  document.body.style.overflow = '';
-  await detenerEscanerTransferencia();
-}
-
-async function analizarTransferenciaDesdeInput() {
-  const input = document.getElementById('codigoManualTransferencia');
-  const resumen = document.getElementById('resumenTransferenciaRecibida');
-  const codigo = (input && input.value ? input.value.trim() : '');
-  if (!codigo) {
-    notificar('Pega o escanea un código antes de analizar.', 'warning');
-    return null;
-  }
-
-  const data = await desempaquetarCadenaTransferencia(codigo);
-  const analisis = analizarTransferencia(data);
-  transferenciaAnalizadaActual = { codigo, data, analisis };
-
-  if (resumen) {
-    resumen.textContent = `Se han detectado ${analisis.nuevos} platos nuevos y ${analisis.duplicados} repetidos (total ${analisis.total}). ¿Deseas añadirlos?`;
-  }
-  return transferenciaAnalizadaActual;
-}
-
-async function importarTransferenciaDesdeModal() {
-  try {
-    const analizada = transferenciaAnalizadaActual || (await analizarTransferenciaDesdeInput());
-    if (!analizada) return;
-    if (!confirm(`Se han detectado ${analizada.analisis.nuevos} platos nuevos. ¿Deseas añadirlos?`)) return;
-    const resultado = await procesarTransferenciaRecibida(analizada.codigo);
-    notificar(`Importación completada: ${resultado.importados} platos añadidos.`);
-    await cerrarModalEscanerTransferencia();
-  } catch (error) {
-    console.error(error);
-    notificar(error.message || 'No se pudo importar la transferencia.', 'danger');
-  }
-}
-
-// ======================
 // Sección: Lista de compra
 // ======================
 function extraerIngrediente(ingredienteTexto) {
@@ -1565,8 +1144,6 @@ function conectarEventos() {
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       cerrarModalSelector();
-      cerrarModalTransferencia();
-      cerrarModalEscanerTransferencia();
     }
   });
 
@@ -1582,16 +1159,26 @@ function conectarEventos() {
   document.getElementById('formPlato').addEventListener('submit', guardarPlatoDesdeFormulario);
   document.getElementById('resetFormularioBtn').addEventListener('click', resetearFormularioPlato);
   document.getElementById('cancelarEdicionBtn').addEventListener('click', resetearFormularioPlato);
-  document.getElementById('btnExportBackup').addEventListener('click', () => {
-    if (typeof window.exportarBackup === 'function') {
-      window.exportarBackup();
-    }
+  document.getElementById('btnDescargarCopiaSeguridad').addEventListener('click', () => {
+    descargarCopiaSeguridad().catch((err) => {
+      console.error(err);
+      notificar('No se pudo generar la copia de seguridad.', 'danger');
+    });
   });
-  document.getElementById('inputImportBackup').addEventListener('change', async (e) => {
+  document.getElementById('btnCompartirCopiaSeguridad').addEventListener('click', () => {
+    compartirCopiaSeguridad().catch((err) => {
+      console.error(err);
+      notificar('No se pudo compartir la copia de seguridad.', 'danger');
+    });
+  });
+  document.getElementById('inputImportCopiaSeguridad').addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    if (typeof window.importarBackupOPlato === 'function') {
-      await window.importarBackupOPlato(file);
+    try {
+      await importarCopiaSeguridad(file);
+    } catch (err) {
+      console.error(err);
+      notificar('No se pudo importar la copia de seguridad.', 'danger');
     }
     e.target.value = '';
   });
@@ -1599,72 +1186,12 @@ function conectarEventos() {
   const nombre = document.getElementById('nombrePlato');
   nombre.addEventListener('input', (e) => actualizarSugerenciasPlatos(e.target.value));
   nombre.addEventListener('blur', () => setTimeout(() => document.getElementById('sugerenciasPlatos').classList.add('hidden'), 150));
-  document.getElementById('btnCompartirSeleccionados').addEventListener('click', async () => {
-    const ids = [...platosSeleccionadosParaTransferir];
-    if (!ids.length) return;
-    await abrirModalTransferencia('varios', ids);
-  });
-  document.querySelectorAll('[data-cerrar-transferencia="1"]').forEach((el) => {
-    el.addEventListener('click', cerrarModalTransferencia);
-  });
-  document.getElementById('btnAbrirEscanerTransferencia').addEventListener('click', abrirModalEscanerTransferencia);
-  document.querySelectorAll('[data-cerrar-escaner-transferencia="1"]').forEach((el) => {
-    el.addEventListener('click', () => {
-      cerrarModalEscanerTransferencia();
-    });
-  });
-  document.getElementById('btnAnalizarTransferencia').addEventListener('click', async () => {
-    try {
-      await analizarTransferenciaDesdeInput();
-    } catch (error) {
-      notificar(error.message || 'No se pudo analizar el código.', 'danger');
-    }
-  });
-  document.getElementById('btnImportarTransferencia').addEventListener('click', importarTransferenciaDesdeModal);
 
   // Lista
   document.getElementById('btnRegenerarLista').addEventListener('click', generarListaCompraDesdePlanActual);
   document.getElementById('btnLimpiarLista').addEventListener('click', limpiarListaCompra);
   document.getElementById('btnCompartirWhatsapp').addEventListener('click', compartirWhatsapp);
   document.getElementById('btnCompartirEmail').addEventListener('click', compartirEmail);
-
-  document.body.addEventListener('click', async (e) => {
-    // GUARDIA DE SEGURIDAD CRÍTICA
-    if (!e.target || typeof e.target.closest !== 'function') return;
-
-    // 1. Botón QR Individual (en tarjetas)
-    const btnQR = e.target.closest('.btn-qr-plato');
-    if (btnQR) {
-      e.preventDefault();
-      const idPlato = btnQR.dataset.id;
-      console.log('Clic detectado en QR para plato:', idPlato);
-      const datos = await window.prepararDatosParaTransferencia('uno', [idPlato]);
-      window.codigoTransferenciaActual = datos;
-      const ta = document.getElementById('transferenciaCodigoTexto');
-      if (ta) ta.value = datos;
-      mostrarModalQR(datos);
-      return;
-    }
-
-    // 2. Botón Transferir Biblioteca Completa
-    const btnTransferirTodo = e.target.closest('#btnTransferirTodo');
-    if (btnTransferirTodo) {
-      e.preventDefault();
-      e.stopPropagation();
-      console.log('Paso 1: Clic en Transferir Biblioteca');
-      try {
-        const datos = await window.prepararDatosParaTransferencia('todo');
-        console.log('Paso 2: Datos de biblioteca preparados', datos ? 'OK' : 'VACÍO');
-        window.codigoTransferenciaActual = datos;
-        const ta = document.getElementById('transferenciaCodigoTexto');
-        if (ta) ta.value = datos;
-        mostrarModalQR(datos);
-      } catch (error) {
-        console.error('Error en Transferir Biblioteca (Paso 1/2):', error);
-      }
-      return;
-    }
-  });
 }
 
 function renderTodo() {
@@ -1687,9 +1214,6 @@ window.eliminarPlato = eliminarPlato;
 window.generarListaCompraDesdePlanActual = generarListaCompraDesdePlanActual;
 window.limpiarListaCompra = limpiarListaCompra;
 window.obtenerTextoListaCompra = obtenerTextoListaCompra;
-window.prepararDatosParaTransferencia = prepararDatosParaTransferencia;
-window.procesarTransferenciaRecibida = procesarTransferenciaRecibida;
-window.abrirModalTransferencia = abrirModalTransferencia;
 
 document.addEventListener('DOMContentLoaded', async () => {
   await cargarEstado();

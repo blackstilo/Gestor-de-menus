@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gestor-menus-saludables-v2';
+const CACHE_NAME = 'gestor-menus-saludables-v3';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -9,9 +9,7 @@ const PRECACHE_URLS = [
   './ui.js',
   './icono.png',
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
-  'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
-  'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
 ];
 
 self.addEventListener('install', (event) => {
@@ -40,8 +38,7 @@ function shouldHandleRequest(request) {
   const googleFontCss = requestUrl.origin === 'https://fonts.googleapis.com';
   const googleFontFiles = requestUrl.origin === 'https://fonts.gstatic.com';
   const html2pdfLib = requestUrl.origin === 'https://cdnjs.cloudflare.com';
-  const unpkgLib = requestUrl.origin === 'https://unpkg.com';
-  return sameOrigin || googleFontCss || googleFontFiles || html2pdfLib || unpkgLib;
+  return sameOrigin || googleFontCss || googleFontFiles || html2pdfLib;
 }
 
 self.addEventListener('fetch', (event) => {

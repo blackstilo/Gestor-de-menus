@@ -408,16 +408,6 @@
           </nav>
 
           <div class="hidden md:flex items-center gap-2">
-            <button id="btnAbrirEscanerTransferencia"
-              title="Escanear o pegar código de transferencia"
-              class="inline-flex items-center gap-1 rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-50 transition">
-              Recibir datos
-            </button>
-            <button id="btnTransferirTodo"
-              title="Transferir biblioteca completa"
-              class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition">
-              Transferir biblioteca completa
-            </button>
             <button id="btnLimpiarTodo"
               title="Borrar todos los datos de la aplicación"
               class="inline-flex items-center gap-1 rounded-full border border-red-100 bg-white px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition">
@@ -583,10 +573,11 @@
                 <span id="badgeEdicionPlato" class="hidden badge-edicion">Editando</span>
               </div>
               <div class="mt-3 flex flex-wrap items-center gap-2">
-                <button id="btnExportBackup" type="button" class="btn-secundario">Exportar copia de seguridad</button>
-                <label class="btn-secundario cursor-pointer">
-                  Importar backup
-                  <input id="inputImportBackup" type="file" accept=".json" class="hidden" />
+                <button id="btnDescargarCopiaSeguridad" type="button" class="btn-primario">Guardar copia de seguridad</button>
+                <button id="btnCompartirCopiaSeguridad" type="button" class="btn-secundario">Compartir copia (WhatsApp/Email)</button>
+                <label class="btn-secundario cursor-pointer inline-flex items-center justify-center">
+                  Importar copia de seguridad
+                  <input id="inputImportCopiaSeguridad" type="file" accept=".json" class="hidden" />
                 </label>
               </div>
 
@@ -652,11 +643,6 @@
                   Aún no has guardado ningún plato.
                 </p>
               </div>
-              <div class="mt-3 flex justify-end">
-                <button id="btnCompartirSeleccionados" class="hidden btn-primario">
-                  Compartir seleccionados (0)
-                </button>
-              </div>
             </div>
           </div>
         </section>
@@ -716,62 +702,8 @@
       </div>
     </div>
 
-    <div id="modalTransferencia" class="modal hidden" role="dialog" aria-modal="true" aria-label="Transferencia por QR">
-      <div class="modal-fondo" data-cerrar-transferencia="1"></div>
-      <div class="modal-caja max-w-lg">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <p class="text-xs uppercase tracking-wider text-slate-500 font-medium">Transferencia offline</p>
-            <h3 class="text-base sm:text-lg font-semibold tracking-tight mt-1">Código de transferencia</h3>
-            <p id="textoTransferenciaInfo" class="text-xs text-slate-500 mt-1">Escanea este QR desde otro dispositivo.</p>
-          </div>
-          <button class="chip-icono" data-cerrar-transferencia="1" aria-label="Cerrar">×</button>
-        </div>
-        <div class="mt-4 rounded-2xl border border-slate-200 bg-white p-4 flex justify-center">
-          <div id="qrcode" class="min-h-[220px] min-w-[220px] flex items-center justify-center"></div>
-        </div>
-        <div class="mt-3">
-          <label for="transferenciaCodigoTexto" class="label-campo">Código de transferencia</label>
-          <textarea id="transferenciaCodigoTexto" class="input-campo h-24 mt-1 text-xs" readonly></textarea>
-        </div>
-        <div class="mt-4 flex justify-end gap-2">
-          <button class="btn-secundario" data-cerrar-transferencia="1">Cerrar</button>
-          <button id="btnCopiarCodigoTransferencia" class="btn-primario">Copiar código de transferencia</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="modalEscanerTransferencia" class="modal hidden" role="dialog" aria-modal="true" aria-label="Recibir transferencia">
-      <div class="modal-fondo" data-cerrar-escaner-transferencia="1"></div>
-      <div class="modal-caja max-w-xl">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <p class="text-xs uppercase tracking-wider text-slate-500 font-medium">Recepción</p>
-            <h3 class="text-base sm:text-lg font-semibold tracking-tight mt-1">Escanear o pegar código</h3>
-            <p class="text-xs text-slate-500 mt-1">Si la cámara falla, pega el código manualmente.</p>
-          </div>
-          <button class="chip-icono" data-cerrar-escaner-transferencia="1" aria-label="Cerrar">×</button>
-        </div>
-        <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50/50 p-3">
-          <div id="visorEscanerTransferencia" class="rounded-xl overflow-hidden"></div>
-        </div>
-        <div class="mt-3">
-          <label for="codigoManualTransferencia" class="label-campo">Pegar código manual</label>
-          <textarea id="codigoManualTransferencia" class="input-campo h-24 mt-1 text-xs" placeholder="Pega aquí la cadena Base64"></textarea>
-        </div>
-        <p id="resumenTransferenciaRecibida" class="mt-3 text-sm text-slate-600"></p>
-        <div class="mt-4 flex justify-end gap-2">
-          <button class="btn-secundario" data-cerrar-escaner-transferencia="1">Cerrar</button>
-          <button id="btnAnalizarTransferencia" class="btn-secundario">Analizar código</button>
-          <button id="btnImportarTransferencia" class="btn-primario">Importar</button>
-        </div>
-      </div>
-    </div>
-
   <script type="module" src="./db.js"></script>
   <script type="module" src="./ui.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script defer src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script type="module" src="./app.js"></script>
 </body>
