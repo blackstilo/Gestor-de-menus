@@ -1,3 +1,5 @@
+import { mostrarModalQR } from './ui.js';
+
 /* Gestor de Menús Saludables
    Web App local (SPA) con LocalStorage.
    Todo el contenido y mensajes en español.
@@ -651,14 +653,10 @@ function createPlatoListItem(plato) {
     try {
       const datos = await window.prepararDatosParaTransferencia('uno', [plato.id]);
       console.log('Paso 2: Datos preparados', datos ? 'OK' : 'VACÍO');
-      if (window.mostrarModalQR) {
-        window.codigoTransferenciaActual = datos;
-        const ta = document.getElementById('transferenciaCodigoTexto');
-        if (ta) ta.value = datos;
-        window.mostrarModalQR(datos);
-      } else {
-        console.error('Error: window.mostrarModalQR no existe');
-      }
+      window.codigoTransferenciaActual = datos;
+      const ta = document.getElementById('transferenciaCodigoTexto');
+      if (ta) ta.value = datos;
+      mostrarModalQR(datos);
     } catch (error) {
       console.error('Error en Paso 1/2:', error);
     }
@@ -1219,15 +1217,7 @@ async function abrirModalTransferencia(tipo, ids = []) {
     if (!modal || !texto) return;
 
     texto.value = data.cadenaBase64;
-    if (typeof window.mostrarModalQR === 'function') {
-      window.mostrarModalQR(data.cadenaBase64, { sinFotos: data.sinFotos });
-    } else {
-      const qrContenedor = document.getElementById('qrcode') || document.getElementById('transferenciaQr');
-      if (qrContenedor) {
-        qrContenedor.innerHTML = '';
-        qrContenedor.textContent = 'No se pudo cargar el generador de QR (ui.js).';
-      }
-    }
+    mostrarModalQR(data.cadenaBase64);
     modal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
 
@@ -1652,7 +1642,7 @@ function conectarEventos() {
       window.codigoTransferenciaActual = datos;
       const ta = document.getElementById('transferenciaCodigoTexto');
       if (ta) ta.value = datos;
-      window.mostrarModalQR(datos);
+      mostrarModalQR(datos);
       return;
     }
 
@@ -1665,14 +1655,10 @@ function conectarEventos() {
       try {
         const datos = await window.prepararDatosParaTransferencia('todo');
         console.log('Paso 2: Datos de biblioteca preparados', datos ? 'OK' : 'VACÍO');
-        if (window.mostrarModalQR) {
-          window.codigoTransferenciaActual = datos;
-          const ta = document.getElementById('transferenciaCodigoTexto');
-          if (ta) ta.value = datos;
-          window.mostrarModalQR(datos);
-        } else {
-          console.error('Error: window.mostrarModalQR no existe');
-        }
+        window.codigoTransferenciaActual = datos;
+        const ta = document.getElementById('transferenciaCodigoTexto');
+        if (ta) ta.value = datos;
+        mostrarModalQR(datos);
       } catch (error) {
         console.error('Error en Transferir Biblioteca (Paso 1/2):', error);
       }
