@@ -465,18 +465,6 @@ export async function crearBackupJson() {
   return payload;
 }
 
-export function descargarJson(data, nombre) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const enlace = document.createElement('a');
-  enlace.href = url;
-  enlace.download = nombre;
-  document.body.appendChild(enlace);
-  enlace.click();
-  enlace.remove();
-  URL.revokeObjectURL(url);
-}
-
 export async function generarArchivoBackup() {
   const payload = await crearBackupJson();
   const fecha = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
@@ -487,28 +475,6 @@ export async function generarArchivoBackup() {
 export async function descargarCopiaSeguridad() {
   mostrarToastMensaje('Generando copia de seguridad...');
   const file = await generarArchivoBackup();
-  descargarArchivoFile(file);
-}
-
-export async function compartirCopiaSeguridad() {
-  const file = await generarArchivoBackup();
-  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({
-        files: [file],
-        title: 'Copia de Seguridad de Menús',
-        text: 'Aquí tienes la copia de seguridad de mis menús saludables.'
-      });
-      return;
-    } catch (error) {
-      if (error && error.name === 'AbortError') return;
-      console.warn('navigator.share falló.', error);
-    }
-  }
-  mostrarToastMensaje(
-    'La función de compartir nativa no está disponible en este navegador. El archivo se descargará en su lugar',
-    'warning'
-  );
   descargarArchivoFile(file);
 }
 
@@ -566,36 +532,6 @@ export async function importarCopiaSeguridad(file) {
 
 export async function exportarBackup() {
   return descargarCopiaSeguridad();
-}
-
-export async function compartirPlato(plato) {
-  if (!plato) return;
-  mostrarToastMensaje('Preparando plato...');
-
-  const payload = {
-    tipo: 'plato',
-    fecha: new Date().toISOString(),
-    plato
-  };
-
-  const nombreArchivo = `plato_${String(plato.nombre || 'plato').replace(/[^a-z0-9]+/gi, '_').toLowerCase()}_${plato.id || 'sin-id'}.json`;
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const file = new File([blob], nombreArchivo, { type: 'application/json' });
-
-  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({
-        title: 'Compartir plato saludable',
-        text: `Plato: ${plato.nombre}`,
-        files: [file]
-      });
-      return;
-    } catch (error) {
-      console.warn('Web Share API falló, se usará descarga directa.', error);
-    }
-  }
-
-  descargarJson(payload, nombreArchivo);
 }
 
 async function leerArchivoJson(archivo) {
@@ -664,7 +600,5 @@ async function importarPlato(data) {
 
 window.exportarBackup = exportarBackup;
 window.descargarCopiaSeguridad = descargarCopiaSeguridad;
-window.compartirCopiaSeguridad = compartirCopiaSeguridad;
 window.importarCopiaSeguridad = importarCopiaSeguridad;
 window.importarBackupOPlato = importarBackupOPlato;
-window.compartirPlato = compartirPlato;

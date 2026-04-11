@@ -1,8 +1,4 @@
-import {
-  descargarCopiaSeguridad,
-  compartirCopiaSeguridad,
-  importarCopiaSeguridad
-} from './logic.js';
+import { descargarCopiaSeguridad, importarCopiaSeguridad } from './logic.js';
 
 /* Gestor de Menús Saludables
    Web App local (SPA) con LocalStorage.
@@ -556,19 +552,7 @@ function createPlatoListItem(plato) {
   btnEliminar.textContent = 'Eliminar';
   btnEliminar.addEventListener('click', () => eliminarPlato(plato.id));
 
-  const btnCompartir = document.createElement('button');
-  btnCompartir.type = 'button';
-  btnCompartir.className = 'inline-flex items-center justify-center rounded-full border border-slate-200 text-[11px] px-2.5 py-1 text-slate-600 hover:border-sky-300 hover:text-sky-600 transition';
-  btnCompartir.textContent = 'Compartir';
-  btnCompartir.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (typeof window.compartirPlato === 'function') {
-      window.compartirPlato(plato);
-    }
-  });
-
   acciones.appendChild(btnEditar);
-  acciones.appendChild(btnCompartir);
   acciones.appendChild(btnEliminar);
 
   li.appendChild(mini);
@@ -1054,17 +1038,6 @@ function obtenerTextoListaCompra() {
   return `Lista de la compra (${formatearRangoPeriodo()}):\n\n` + lineas.join('\n');
 }
 
-function compartirWhatsapp() {
-  const texto = encodeURIComponent(obtenerTextoListaCompra());
-  window.open(`https://wa.me/?text=${texto}`, '_blank');
-}
-
-function compartirEmail() {
-  const asunto = encodeURIComponent('Lista de la compra');
-  const cuerpo = encodeURIComponent(obtenerTextoListaCompra());
-  window.location.href = `mailto:?subject=${asunto}&body=${cuerpo}`;
-}
-
 // ============
 // Acciones globales
 // ============
@@ -1165,12 +1138,6 @@ function conectarEventos() {
       notificar('No se pudo generar la copia de seguridad.', 'danger');
     });
   });
-  document.getElementById('btnCompartirCopiaSeguridad').addEventListener('click', () => {
-    compartirCopiaSeguridad().catch((err) => {
-      console.error(err);
-      notificar('No se pudo compartir la copia de seguridad.', 'danger');
-    });
-  });
   document.getElementById('inputImportCopiaSeguridad').addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -1190,8 +1157,6 @@ function conectarEventos() {
   // Lista
   document.getElementById('btnRegenerarLista').addEventListener('click', generarListaCompraDesdePlanActual);
   document.getElementById('btnLimpiarLista').addEventListener('click', limpiarListaCompra);
-  document.getElementById('btnCompartirWhatsapp').addEventListener('click', compartirWhatsapp);
-  document.getElementById('btnCompartirEmail').addEventListener('click', compartirEmail);
 }
 
 function renderTodo() {

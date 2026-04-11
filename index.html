@@ -261,26 +261,6 @@
       transform: translateY(-1px);
     }
 
-    .btn-whatsapp {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      border-radius: 999px;
-      padding: 0.6rem 1rem;
-      font-size: 0.9rem;
-      font-weight: 800;
-      color: white;
-      background: rgb(16 185 129);
-      transition: transform 120ms ease, background-color 160ms ease;
-      flex: 1;
-    }
-
-    .btn-whatsapp:hover {
-      background: rgb(5 150 105);
-      transform: translateY(-1px);
-    }
-
     .tarjeta-accion {
       width: 100%;
       display: inline-flex;
@@ -460,7 +440,7 @@
                   <span class="tarjeta-icono bg-emerald-50 text-emerald-600 border border-emerald-100">🧾</span>
                   <span class="flex-1">
                     <span class="block font-semibold">Lista de la Compra</span>
-                    <span class="block text-xs text-slate-500">Consolida ingredientes y compártela</span>
+                    <span class="block text-xs text-slate-500">Consolida ingredientes desde tu plan</span>
                   </span>
                   <span class="text-slate-400">›</span>
                 </button>
@@ -499,7 +479,7 @@
                   class="h-44 w-full object-cover" />
                 <div class="p-4">
                   <p class="text-sm font-semibold">Ingredientes frescos</p>
-                  <p class="text-xs text-slate-500">Tu lista de la compra, limpia y lista para compartir.</p>
+                  <p class="text-xs text-slate-500">Tu lista de la compra, clara y fácil de usar.</p>
                 </div>
               </div>
             </div>
@@ -574,7 +554,6 @@
               </div>
               <div class="mt-3 flex flex-wrap items-center gap-2">
                 <button id="btnDescargarCopiaSeguridad" type="button" class="btn-primario">Guardar copia de seguridad</button>
-                <button id="btnCompartirCopiaSeguridad" type="button" class="btn-secundario">Compartir copia (WhatsApp/Email)</button>
                 <label class="btn-secundario cursor-pointer inline-flex items-center justify-center">
                   Importar copia de seguridad
                   <input id="inputImportCopiaSeguridad" type="file" accept=".json" class="hidden" />
@@ -654,7 +633,7 @@
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <h2 class="text-lg sm:text-xl font-semibold tracking-tight">Lista de la Compra</h2>
-                <p class="text-sm text-slate-500">Edita, marca lo que ya tienes y comparte por WhatsApp o Email.</p>
+                <p class="text-sm text-slate-500">Edita y marca lo que ya tienes en tu despensa.</p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
                 <button id="btnRegenerarLista" class="btn-secundario">Regenerar desde planificador</button>
@@ -669,10 +648,6 @@
               </p>
             </div>
 
-            <div class="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
-              <button id="btnCompartirWhatsapp" class="btn-whatsapp">Compartir por WhatsApp</button>
-              <button id="btnCompartirEmail" class="btn-negro flex-1">Compartir por Email</button>
-            </div>
           </div>
         </section>
       </div>
