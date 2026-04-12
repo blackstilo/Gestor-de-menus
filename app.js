@@ -1093,7 +1093,7 @@ function conectarEventos() {
     generarListaCompraDesdePlanActual();
     navegarA('#/lista');
   });
-  document.getElementById('btnExportarPDF').addEventListener('click', () => {
+  document.getElementById('btnExportPdf').addEventListener('click', () => {
     if (typeof window.exportarPlanAPDF === 'function') {
       window.exportarPlanAPDF();
       return;
