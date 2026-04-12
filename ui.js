@@ -526,66 +526,59 @@ function htmlNombresPlatosPdf(nombres) {
     return '<span class="pdf-sin-plato">—</span>';
   }
   return nombres
-    .map((n) => `<div class="pdf-plato-nombre evitar-corte">${escaparHtmlPdf(n)}</div>`)
+    .map((n) => `<div class="pdf-plato-nombre">${escaparHtmlPdf(n)}</div>`)
     .join('');
-}
-
-/** Almuerzo + Comida del planificador se muestran en la columna «Almuerzo» del PDF. */
-function nombresAlmuerzoPdf(plan, indiceDia) {
-  const a = nombresPlatosPdf(plan, indiceDia, 'Almuerzo');
-  const c = nombresPlatosPdf(plan, indiceDia, 'Comida');
-  return [...a, ...c];
 }
 
 function construirHtmlPlanPdf({ logoDataUrl, mostrarListaCompra }) {
   const dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+  const momentos = ['Almuerzo', 'Comida', 'Cena'];
   const plan = obtenerPlanActual();
   const rango = formatearRangoPeriodo();
-  const tituloPlan =
-    estado.periodo.tipo === 'semana' ? 'MI PLAN SEMANAL' : 'MI PLAN QUINCENAL';
+  const tituloDoc =
+    estado.periodo.tipo === 'semana'
+      ? 'PLANIFICACIÓN NUTRICIONAL SEMANAL'
+      : 'PLANIFICACIÓN NUTRICIONAL QUINCENAL';
   const listaItems = (estado.listaCompra.items || []).map((it) => it.texto).filter(Boolean);
 
-  const filasDiasHtml = dias
-    .map((dia, indiceDia) => {
-      const desayuno = htmlNombresPlatosPdf([]); // sin toma Desayuno en la app
-      const almuerzo = htmlNombresPlatosPdf(nombresAlmuerzoPdf(plan, indiceDia));
-      const cena = htmlNombresPlatosPdf(nombresPlatosPdf(plan, indiceDia, 'Cena'));
-      return `
-        <tr class="evitar-corte">
-          <th scope="row">${escaparHtmlPdf(dia)}</th>
-          <td>${desayuno}</td>
-          <td>${almuerzo}</td>
-          <td>${cena}</td>
-        </tr>`;
-    })
+  const theadHtml = `
+    <tr>
+      <th scope="col" class="pdf-esquina"></th>
+      ${dias.map((dia) => `<th scope="col">${escaparHtmlPdf(dia)}</th>`).join('')}
+    </tr>`;
+
+  const tbodyHtml = momentos
+    .map(
+      (momento) => `
+    <tr class="evitar-corte">
+      <th scope="row">${escaparHtmlPdf(momento)}</th>
+      ${dias
+        .map((_, indiceDia) => {
+          const celdas = htmlNombresPlatosPdf(nombresPlatosPdf(plan, indiceDia, momento));
+          return `<td>${celdas}</td>`;
+        })
+        .join('')}
+    </tr>`
+    )
     .join('');
 
   const tablaHtml = `
-    <table class="pdf-tabla-menu">
-      <thead>
-        <tr>
-          <th scope="col">Día</th>
-          <th scope="col">Desayuno</th>
-          <th scope="col">Almuerzo</th>
-          <th scope="col">Cena</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${filasDiasHtml}
-      </tbody>
+    <table class="pdf-tabla-plan">
+      <thead>${theadHtml}</thead>
+      <tbody>${tbodyHtml}</tbody>
     </table>
   `;
 
   const logoImg = logoDataUrl
-    ? `<img src="${logoDataUrl}" alt="" class="pdf-logo-img" width="40" height="40" />`
+    ? `<img src="${logoDataUrl}" alt="" class="pdf-logo-img" width="44" height="44" />`
     : '<div class="pdf-logo-fallback" aria-hidden="true">M</div>';
 
   const listaHtml =
     mostrarListaCompra && listaItems.length
       ? `
-      <section class="pdf-seccion-lista">
-        <h2>Lista de la Compra</h2>
-        <div class="pdf-lista-dos-columnas">
+      <section class="pdf-seccion-lista evitar-corte">
+        <h2 class="pdf-lista-titulo">Lista de la Compra</h2>
+        <div class="pdf-lista-multicolumna">
           ${listaItems
             .map(
               (texto) => `
@@ -604,9 +597,24 @@ function construirHtmlPlanPdf({ logoDataUrl, mostrarListaCompra }) {
     <div class="pdf-root">
       <style>
         .evitar-corte { page-break-inside: avoid; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
-        h2 { color: #059669; border-bottom: 2px solid #059669; padding-bottom: 5px; margin-top: 30px; }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          table-layout: fixed;
+        }
+        th,
+        td {
+          border: 1px solid #cbd5e1;
+          padding: 8px;
+          vertical-align: top;
+          word-wrap: break-word;
+        }
+        th {
+          background-color: #f8fafc;
+          color: #475569;
+          font-size: 0.8rem;
+          text-transform: uppercase;
+        }
 
         .pdf-root {
           font-family: "Inter", system-ui, -apple-system, sans-serif;
@@ -615,140 +623,137 @@ function construirHtmlPlanPdf({ logoDataUrl, mostrarListaCompra }) {
         }
         .pdf-root * { box-sizing: border-box; }
         .pdf-pagina {
-          padding: 20mm;
+          padding: 0;
           width: 100%;
         }
-        .pdf-cabecera {
+        .pdf-bloque-principal {
+          margin-bottom: 8mm;
+        }
+        .pdf-header-fila {
           display: flex;
           flex-direction: row;
           justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: 20px;
-          gap: 16px;
-        }
-        .pdf-cabecera-izq {
-          flex-shrink: 0;
+          align-items: center;
+          margin-bottom: 10px;
         }
         .pdf-logo-img {
-          width: 40px;
-          height: 40px;
+          width: 44px;
+          height: 44px;
           object-fit: cover;
-          border-radius: 10px;
-          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          border: 1px solid #cbd5e1;
           display: block;
         }
         .pdf-logo-fallback {
-          width: 40px;
-          height: 40px;
-          border-radius: 10px;
-          background: #d1fae5;
-          border: 1px solid #6ee7b7;
-          color: #047857;
+          width: 44px;
+          height: 44px;
+          border-radius: 8px;
+          background: #f1f5f9;
+          border: 1px solid #cbd5e1;
+          color: #475569;
           font-weight: 700;
           font-size: 18px;
           display: flex;
           align-items: center;
           justify-content: center;
         }
-        .pdf-cabecera-der {
-          text-align: right;
-          flex: 1;
-        }
-        .pdf-titulo-doc {
-          font-size: 20px;
-          font-weight: 700;
-          color: #1e293b;
-          margin: 0 0 6px 0;
-          letter-spacing: -0.02em;
-        }
         .pdf-rango-fechas {
-          font-size: 12px;
-          color: #94a3b8;
-          margin: 0;
-        }
-        .pdf-tabla-menu {
-          width: 100%;
-          border-collapse: collapse;
           font-size: 11px;
+          color: #64748b;
+          margin: 0;
+          text-align: right;
+          font-weight: 500;
         }
-        .pdf-tabla-menu thead th {
-          background: #f8fafc;
+        .pdf-titulo-centrado {
+          text-align: center;
+          font-size: 15px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          color: #0f172a;
+          margin: 0 0 14px 0;
+          text-transform: uppercase;
+        }
+        .pdf-tabla-plan {
+          font-size: 10px;
+        }
+        .pdf-tabla-plan thead th.pdf-esquina {
+          width: 11%;
+        }
+        .pdf-tabla-plan tbody th {
+          background-color: #f8fafc;
           color: #475569;
+          font-size: 0.8rem;
+          text-transform: uppercase;
           font-weight: 600;
-          border: 1px solid #e2e8f0;
-          padding: 10px;
-          text-align: left;
         }
-        .pdf-tabla-menu tbody th {
-          background: #f1f5f9;
-          color: #475569;
-          font-weight: 600;
-          width: 18%;
-          vertical-align: top;
-        }
-        .pdf-tabla-menu td {
-          vertical-align: top;
-          border: 1px solid #e2e8f0;
-          padding: 10px;
+        .pdf-tabla-plan td {
           background: #fff;
         }
         .pdf-plato-nombre {
-          color: #047857;
-          font-weight: 700;
+          color: #000000;
+          font-weight: 600;
           line-height: 1.35;
           margin-bottom: 4px;
+          font-size: 10px;
         }
         .pdf-plato-nombre:last-child { margin-bottom: 0; }
         .pdf-sin-plato {
-          color: #cbd5e1;
+          color: #94a3b8;
         }
         .pdf-seccion-lista {
           page-break-before: always;
-          padding: 20mm;
+          padding-top: 4mm;
         }
-        .pdf-seccion-lista h2 {
-          margin-top: 0;
-          font-size: 18px;
+        .pdf-lista-titulo {
+          color: #059669;
+          border-bottom: 2px solid #059669;
+          padding-bottom: 5px;
+          margin: 0 0 12px 0;
+          font-size: 13px;
+          text-align: center;
+          text-transform: none;
+          background: transparent;
         }
-        .pdf-lista-dos-columnas {
-          column-count: 2;
-          column-gap: 28px;
-          margin-top: 16px;
+        .pdf-lista-multicolumna {
+          column-count: 4;
+          column-gap: 18px;
         }
         .pdf-lista-item {
           display: flex;
           align-items: flex-start;
-          gap: 10px;
-          margin-bottom: 10px;
+          gap: 8px;
+          margin-bottom: 8px;
           break-inside: avoid;
           page-break-inside: avoid;
         }
         .pdf-chk-vacio {
           flex-shrink: 0;
-          width: 12px;
-          height: 12px;
+          width: 11px;
+          height: 11px;
           border: 1px solid #94a3b8;
-          margin-top: 3px;
+          margin-top: 2px;
           background: #fff;
         }
         .pdf-lista-texto {
-          font-size: 11px;
-          color: #1e293b;
-          line-height: 1.4;
+          font-size: 9px;
+          color: #000000;
+          line-height: 1.35;
         }
       </style>
 
       <div class="pdf-pagina">
-        <header class="pdf-cabecera">
-          <div class="pdf-cabecera-izq">${logoImg}</div>
-          <div class="pdf-cabecera-der">
-            <p class="pdf-titulo-doc">${escaparHtmlPdf(tituloPlan)}</p>
-            <p class="pdf-rango-fechas">${escaparHtmlPdf(rango)}</p>
-          </div>
-        </header>
-        ${tablaHtml}
+        <div class="pdf-bloque-principal evitar-corte">
+          <header>
+            <div class="pdf-header-fila">
+              <div class="pdf-header-logo">${logoImg}</div>
+              <p class="pdf-rango-fechas">${escaparHtmlPdf(rango)}</p>
+            </div>
+            <h1 class="pdf-titulo-centrado">${escaparHtmlPdf(tituloDoc)}</h1>
+          </header>
+          ${tablaHtml}
+        </div>
+        ${listaHtml}
       </div>
-      ${listaHtml}
     </div>
   `;
 }
@@ -781,7 +786,7 @@ export async function exportarPlanAPDF() {
   const html = construirHtmlPlanPdf({ logoDataUrl, mostrarListaCompra: incluirLista });
   const contenedor = document.createElement('div');
   contenedor.innerHTML = html;
-  contenedor.style.width = '210mm';
+  contenedor.style.width = '297mm';
   contenedor.style.background = '#ffffff';
   contenedor.style.color = '#1e293b';
 
@@ -795,11 +800,11 @@ export async function exportarPlanAPDF() {
   try {
     await html2pdf()
       .set({
-        margin: [0, 0, 0, 0],
+        margin: [10, 10, 10, 10],
         filename: `plan_${estado.periodo.tipo}_${estado.periodo.inicioISO.slice(0, 10)}.pdf`,
         image: { type: 'jpeg', quality: 0.96 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        html2canvas: { scale: 3, useCORS: true, logging: false, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
       })
       .from(contenedor)
       .save();
