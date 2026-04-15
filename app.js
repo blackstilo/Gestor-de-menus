@@ -1,4 +1,4 @@
-import { descargarCopiaSeguridad, importarCopiaSeguridad } from './logic.js';
+import { descargarCopiaSeguridad, importarCopiaSeguridad, obtenerLunesDeEstaSemana } from './logic.js';
 
 /* Gestor de Menús Saludables
    Web App local (SPA) con LocalStorage.
@@ -215,15 +215,6 @@ function notificar(mensaje, tipo = 'success') {
     return;
   }
   alert(mensaje);
-}
-
-function obtenerLunesDeEstaSemana(fecha = new Date()) {
-  const d = new Date(fecha);
-  const dia = d.getDay(); // 0 domingo
-  const diff = (dia === 0 ? -6 : 1) - dia;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
 }
 
 function clavePeriodoActual(periodo = estado.periodo) {

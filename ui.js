@@ -12,7 +12,8 @@ import {
   eliminarPlato,
   generarListaCompraDesdePlanActual,
   limpiarListaCompra,
-  obtenerTextoListaCompra
+  obtenerTextoListaCompra,
+  moverPlatoEnPlanificador
 } from './logic.js';
 
 let ingredientesTemporales = [];
@@ -415,7 +416,8 @@ function createPlannerCell(diaClave, momentoClave, indiceDia, plan) {
   cont.appendChild(cabecera);
 
   const lista = document.createElement('ul');
-  lista.className = 'space-y-1 text-[11px] sm:text-xs text-slate-700 max-h-24 overflow-y-auto scroll-sutil pr-1';
+  lista.className = 'space-y-1 text-[11px] sm:text-xs text-slate-700 max-h-24 overflow-y-auto scroll-sutil pr-1 contenedor-platos-celda';
+  lista.dataset.claveCelda = claveAsignacion;
 
   if (platosAsignados.length === 0) {
     const li = document.createElement('li');
@@ -426,7 +428,11 @@ function createPlannerCell(diaClave, momentoClave, indiceDia, plan) {
     platosAsignados.forEach((plato, idx) => {
       const li = document.createElement('li');
       li.className = 'flex items-center gap-1 rounded-full bg-white px-2 py-1 border border-slate-200';
+      li.dataset.idPlato = plato.id;
 
+      const iconoDrag = document.createElement('span');
+      iconoDrag.className = 'cursor-grab text-slate-400 select-none';
+      iconoDrag.textContent = '⋮⋮';
       const nombreSpan = document.createElement('span');
       nombreSpan.className = 'flex-1 truncate';
       nombreSpan.textContent = plato.nombre;
@@ -450,6 +456,7 @@ function createPlannerCell(diaClave, momentoClave, indiceDia, plan) {
         renderPlanificador();
       });
 
+      li.appendChild(iconoDrag);
       li.appendChild(nombreSpan);
       li.appendChild(btnBorrar);
       lista.appendChild(li);
@@ -506,6 +513,27 @@ export function renderPlanificador() {
   if (aviso) {
     aviso.classList.toggle('hidden', hayAsignaciones);
   }
+
+  const contenedores = document.querySelectorAll('.contenedor-platos-celda');
+  contenedores.forEach((contenedor) => {
+    if (!window.Sortable) return;
+    new window.Sortable(contenedor, {
+      group: 'planificador',
+      animation: 150,
+      ghostClass: 'opacity-50',
+      draggable: '[data-id-plato]',
+      onEnd: function (evt) {
+        const platoId = evt.item.dataset.idPlato;
+        const origenClave = evt.from.dataset.claveCelda;
+        const destinoClave = evt.to.dataset.claveCelda;
+
+        if (!platoId || !origenClave || !destinoClave) return;
+        if (origenClave !== destinoClave || evt.oldIndex !== evt.newIndex) {
+          moverPlatoEnPlanificador(origenClave, destinoClave, platoId, evt.newIndex);
+        }
+      }
+    });
+  });
 }
 
 function escaparHtmlPdf(valor) {
@@ -704,6 +732,8 @@ export function abrirSelectorParaCelda(diaIndex, momento) {
   const input = document.getElementById('selectorBusqueda');
   input.value = '';
   renderResultadosSelector('');
+  const botonAsignar = document.getElementById('btnConfirmarSelector');
+  if (botonAsignar) botonAsignar.onclick = confirmarSelector;
   abrirModalSelector();
   requestAnimationFrame(() => input.focus());
 }

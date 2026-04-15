@@ -70,6 +70,15 @@ export function normalizarTexto(valor) {
   return proxyCall('normalizarTexto', valor);
 }
 
+export function obtenerLunesDeEstaSemana(fecha = new Date()) {
+  const d = new Date(fecha);
+  const dia = d.getDay();
+  const diff = (dia === 0 ? -6 : 1) - dia;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 export function optimizarImagenArchivo(...params) {
   return proxyCall('optimizarImagenArchivo', ...params);
 }
@@ -92,6 +101,22 @@ export function limpiarListaCompra() {
 
 export function obtenerTextoListaCompra() {
   return proxyCall('obtenerTextoListaCompra');
+}
+
+export function moverPlatoEnPlanificador(origenClave, destinoClave, platoId, nuevoIndice) {
+  const plan = obtenerPlanActual();
+  if (!plan.asignaciones) plan.asignaciones = {};
+
+  if (plan.asignaciones[origenClave] && plan.asignaciones[origenClave].platos) {
+    plan.asignaciones[origenClave].platos = plan.asignaciones[origenClave].platos.filter((id) => id !== platoId);
+  }
+
+  if (!plan.asignaciones[destinoClave]) plan.asignaciones[destinoClave] = { platos: [] };
+  if (!plan.asignaciones[destinoClave].platos) plan.asignaciones[destinoClave].platos = [];
+
+  plan.asignaciones[destinoClave].platos.splice(nuevoIndice, 0, platoId);
+
+  guardarEstado();
 }
 
 function idsDesdeCeldaPlan(asignacion) {

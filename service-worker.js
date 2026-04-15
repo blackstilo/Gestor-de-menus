@@ -9,7 +9,8 @@ const PRECACHE_URLS = [
   './ui.js',
   './icono.png',
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
-  'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
+  'https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js'
 ];
 
 self.addEventListener('install', (event) => {
@@ -38,7 +39,8 @@ function shouldHandleRequest(request) {
   const googleFontCss = requestUrl.origin === 'https://fonts.googleapis.com';
   const googleFontFiles = requestUrl.origin === 'https://fonts.gstatic.com';
   const html2pdfLib = requestUrl.origin === 'https://cdnjs.cloudflare.com';
-  return sameOrigin || googleFontCss || googleFontFiles || html2pdfLib;
+  const jsdelivrLib = requestUrl.origin === 'https://cdn.jsdelivr.net';
+  return sameOrigin || googleFontCss || googleFontFiles || html2pdfLib || jsdelivrLib;
 }
 
 self.addEventListener('fetch', (event) => {
